@@ -22,4 +22,12 @@ Create a `.env` file to configure environment variables such as:
 ```env
 PORT=3000
 CORS_ORIGIN=http://localhost:3000
+DATABASE_URL=postgres://finbot:finbot@localhost:5432/finbot
 ```
+
+`GET /health` reports API status and Postgres connectivity (`"db": "up" | "down"`).
+
+## Docker
+
+This service is orchestrated from the repo root via `docker-compose.yml`
+alongside the Expo web client and Postgres. See the root `README.md`.

@@ -14,6 +14,15 @@ Agent rules for programming the Express API in this package.
 
 Prefer patterns already present in `src/` over inventing a parallel architecture.
 
+## Avoid deprecated functionality
+
+- Do **not** use deprecated APIs, methods, options, or patterns from Node.js, Express, TypeScript, Zod, `jose`, `pg`, or any other dependency.
+- Before using an API, confirm it is current for the installed package major version (official docs or changelog). Prefer the documented replacement when something is marked deprecated, legacy, or removed in a future major.
+- Do not introduce outdated Express/Node patterns (e.g. callback-style APIs when promises/`async` are the project standard, obsolete middleware signatures, or superseded Zod APIs).
+- Match existing modern usage in this repo (ESM + `NodeNext`, Zod 4 schemas such as `z.email()`, async handlers) rather than older tutorial code.
+- When touching code that already uses a deprecated API, migrate it to the supported replacement instead of extending the deprecated usage.
+- If unsure, check current docs for the installed versions in `package.json` and choose the non-deprecated path.
+
 ## Dependencies
 
 - Do **not** install new packages unless strictly necessary.

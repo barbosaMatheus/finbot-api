@@ -3,6 +3,7 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import helmet from 'helmet';
 import healthRouter from './routes/health.js';
+import baseIntelligenceRouter from './routes/baseIntelligence.js';
 
 dotenv.config();
 
@@ -17,6 +18,7 @@ app.use(
 app.use(express.json());
 
 app.use('/health', healthRouter);
+app.use('/base-intelligence', baseIntelligenceRouter);
 
 app.use((_req: Request, res: Response) => {
   res.status(404).json({ error: 'Route not found' });

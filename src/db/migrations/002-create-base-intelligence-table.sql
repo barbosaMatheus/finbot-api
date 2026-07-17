@@ -1,0 +1,5 @@
+CREATE TABLE IF NOT EXISTS base_intelligence (
+    id SERIAL PRIMARY KEY,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    contents TEXT NOT NULL
+);

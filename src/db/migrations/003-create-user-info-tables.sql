@@ -21,7 +21,7 @@ CREATE TABLE IF NOT EXISTS user_info (
   ),
   additional_money_pools TEXT[] NOT NULL DEFAULT '{}' CHECK (
     additional_money_pools <@ ARRAY['Vacation', 'Fun', 'Emergency', 'Savings', 'Investing']
-    AND cardinality(additional_money_pools) = 3
+    AND cardinality(additional_money_pools) < 4
   ),
   investment_risk_comfort TEXT NOT NULL CHECK (investment_risk_comfort IN ('Conservative', 'Moderate', 'Aggressive')),
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),

@@ -1,6 +1,6 @@
 import express from 'express';
 import request from 'supertest';
-import jest from '@jest/globals';
+import { beforeEach, describe, expect, jest, it } from '@jest/globals';
 
 jest.mock('../src/db', () => ({
   pool: {
@@ -22,12 +22,14 @@ import { pool } from '../src/db.js';
 import { chunkText } from '../src/rag/text-chunker.js';
 import { textToEmbedding } from '../src/rag/text-embedder.js';
 
+type MockFn = ReturnType<typeof jest.fn>;
+
 const mockedPool = pool as unknown as {
-  query: jest.Mock;
-  end: jest.Mock;
+  query: MockFn;
+  end: MockFn;
 };
-const mockedChunkText = chunkText as unknown as jest.Mock;
-const mockedTextToEmbedding = textToEmbedding as unknown as jest.Mock;
+const mockedChunkText = chunkText as unknown as MockFn;
+const mockedTextToEmbedding = textToEmbedding as unknown as MockFn;
 
 const app = express();
 app.use(express.json());

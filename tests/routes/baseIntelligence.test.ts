@@ -7,8 +7,8 @@ jest.mock('../src/db', () => ({
   },
 }));
 
-import app from '../src/app';
-import { pool } from '../src/db';
+import app from '../../src/app';
+import { pool } from '../../src/db';
 
 const mockedPool = pool as unknown as {
   query: jest.Mock;

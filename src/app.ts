@@ -5,7 +5,8 @@ import dotenv from 'dotenv';
 import helmet from 'helmet';
 import authRouter from './routes/auth.js';
 import healthRouter from './routes/health.js';
-import baseIntelligenceRouter from './routes/baseIntelligence.js';
+import baseIntelligenceRouter from './routes/base-intelligence.js';
+import embedTextRouter from './routes/embbed-text.js';
 
 dotenv.config();
 
@@ -29,6 +30,7 @@ app.use(express.json());
 app.use('/health', healthRouter);
 app.use('/auth', authRouter);
 app.use('/base-intelligence', baseIntelligenceRouter);
+app.use('/embeddings', embedTextRouter);
 
 app.use((_req: Request, res: Response) => {
   res.status(404).json({ error: 'Route not found' });

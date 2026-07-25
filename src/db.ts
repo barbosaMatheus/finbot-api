@@ -1,8 +1,11 @@
-import pg from '../node_modules/@types/pg/index.js';
+import pg from 'pg';
 
 const { Pool } = pg;
 
 const connectionString = process.env.DATABASE_URL;
+export const pgVectorSize = Number.isNaN(Number.parseInt(process.env.PG_VECTOR_SIZE ?? '768', 10))
+  ? 768
+  : Number.parseInt(process.env.PG_VECTOR_SIZE ?? '768', 10);
 
 if (!connectionString) {
   console.warn(

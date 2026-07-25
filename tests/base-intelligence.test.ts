@@ -1,4 +1,6 @@
+import express from 'express';
 import request from 'supertest';
+import { beforeEach, describe, expect, jest, test } from '@jest/globals';
 
 jest.mock('../src/db', () => ({
   pool: {
@@ -7,13 +9,19 @@ jest.mock('../src/db', () => ({
   },
 }));
 
-import app from '../src/app';
-import { pool } from '../src/db';
+import baseIntelligenceRouter from '../src/routes/base-intelligence.js';
+import { pool } from '../src/db.js';
+
+type MockFn = ReturnType<typeof jest.fn>;
 
 const mockedPool = pool as unknown as {
-  query: jest.Mock;
-  end: jest.Mock;
+  query: MockFn;
+  end: MockFn;
 };
+
+const app = express();
+app.use(express.json());
+app.use('/base-intelligence', baseIntelligenceRouter);
 
 describe('GET /base-intelligence', () => {
   beforeEach(() => {
@@ -21,7 +29,7 @@ describe('GET /base-intelligence', () => {
     mockedPool.end.mockReset();
   });
 
-  it('returns the latest contents row', async () => {
+  test('returns the latest contents row', async () => {
     mockedPool.query.mockResolvedValueOnce({ rows: [{ contents: 'second entry' }] });
 
     const response = await request(app).get('/base-intelligence');

@@ -134,6 +134,17 @@ router.post('/login', validateBody(credentialsSchema), async (req, res, next) =>
 - Do not log tokens, passwords, or raw Authorization headers.
 - Prefer existing auth middleware (`require-auth`) for protected routes.
 
+## Unit Tests
+
+- Keep unit tests close to the feature they cover and place them under `tests/` with a matching structure, such as `tests/routes/` for route tests and `tests/services/` for service tests.
+- Prefer small, focused tests that exercise one behavior at a time and avoid broad integration-style tests unless the feature truly requires it.
+- For route tests, mount the router directly with a lightweight Express app instead of importing the full app entrypoint when the full app pulls in unrelated dependencies.
+- Use `jest.mock()` only for external boundaries such as the database layer, file system access, or helper modules; do not mock the behavior under test.
+- Keep test imports consistent with the project’s ESM + NodeNext setup, and prefer explicit imports from the source modules under test.
+- When mocking modules, use typed Jest mocks and keep the mock shape aligned with the real dependency so the editor and ts-jest both understand the test file.
+- If a test file is becoming noisy, split it into smaller focused tests or helper functions rather than overloading one file with unrelated scenarios.
+- Keep test files IDE-clean by using a dedicated TypeScript config for tests when needed, for example `tests/tsconfig.json`, and avoid patterns that rely on ambiguous runtime resolution.
+
 ## Code quality
 
 - Match existing style in neighboring files (imports, error handling, naming).

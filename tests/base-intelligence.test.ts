@@ -1,4 +1,5 @@
 import request from 'supertest';
+import { describe, test, expect, jest, beforeEach } from "@jest/globals";
 
 jest.mock('../src/db', () => ({
   pool: {
@@ -7,8 +8,8 @@ jest.mock('../src/db', () => ({
   },
 }));
 
-import app from '../../src/app';
-import { pool } from '../../src/db';
+import app from '../src/app';
+import { pool } from '../src/db';
 
 const mockedPool = pool as unknown as {
   query: jest.Mock;
@@ -21,7 +22,7 @@ describe('GET /base-intelligence', () => {
     mockedPool.end.mockReset();
   });
 
-  it('returns the latest contents row', async () => {
+  test('returns the latest contents row', async () => {
     mockedPool.query.mockResolvedValueOnce({ rows: [{ contents: 'second entry' }] });
 
     const response = await request(app).get('/base-intelligence');

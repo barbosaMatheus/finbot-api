@@ -17,7 +17,7 @@ const embedTextSchema = z.object({
   overlap: z.number().int().nonnegative().optional(),
   minChunkSize: z.number().int().nonnegative().optional(),
   vectorDimension: z.number().int().positive().optional(),
-  embeddingOptions: embeddingOptionsSchema,
+  embeddingOptions: embeddingOptionsSchema.optional(),
 });
 
 export interface BuildEmbeddingVectorOptions {

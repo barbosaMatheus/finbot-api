@@ -8,7 +8,8 @@
     "dev": "tsx watch src/server.ts",
     "build": "tsc -p tsconfig.json",
     "start": "node dist/server.js",
-    "migrate:base-intelligence": "tsx src/migrations/001-create-base-intelligence-table.ts"
+    "migrate:base-intelligence": "tsx src/migrations/001-create-base-intelligence-table.ts",
+    "seed:db": "tsx src/db/seed-database.ts"
   },
   "dependencies": {
     "bcrypt": "^6.0.0",

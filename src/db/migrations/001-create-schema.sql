@@ -1,5 +1,6 @@
 CREATE EXTENSION IF NOT EXISTS vector;
 
+-- table containing user account info
 CREATE TABLE IF NOT EXISTS users (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   email TEXT NOT NULL UNIQUE,
@@ -8,6 +9,7 @@ CREATE TABLE IF NOT EXISTS users (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- table containing refresh tokens for user sessions
 CREATE TABLE IF NOT EXISTS refresh_sessions (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -17,12 +19,14 @@ CREATE TABLE IF NOT EXISTS refresh_sessions (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- table containing base intelligence data for the RAG
 CREATE TABLE IF NOT EXISTS base_intelligence (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   contents TEXT NOT NULL
 );
 
+-- table containing user information gathered from the onboarding questions
 CREATE TABLE IF NOT EXISTS user_info (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
@@ -69,6 +73,7 @@ CREATE TABLE IF NOT EXISTS user_info (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- table containing the full text from context provided by the user, used by the RAG
 CREATE TABLE IF NOT EXISTS context_documents (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -77,6 +82,7 @@ CREATE TABLE IF NOT EXISTS context_documents (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- vector table conaining the embeddings of the text chunks from the context documents, used by the RAG
 CREATE TABLE IF NOT EXISTS user_text_embeddings (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,

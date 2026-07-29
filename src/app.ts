@@ -7,6 +7,7 @@ import authRouter from './routes/auth.js';
 import healthRouter from './routes/health.js';
 import baseIntelligenceRouter from './routes/base-intelligence.js';
 import embedTextRouter from './routes/embbed-text.js';
+import onboardingRouter from './routes/onboarding.js';
 
 dotenv.config();
 
@@ -29,6 +30,7 @@ app.use(express.json());
 
 app.use('/health', healthRouter);
 app.use('/auth', authRouter);
+app.use('/onboarding', onboardingRouter);
 app.use('/base-intelligence', baseIntelligenceRouter);
 app.use('/embeddings', embedTextRouter);
 

@@ -3,12 +3,12 @@ import { z } from 'zod';
 
 import { pgVectorSize, pool } from '../db.js';
 import { validateBody } from '../middleware/validate.js';
+import { requireAuth } from '../middleware/require-auth.js';
 import { buildEmbeddingVector } from './embbed-text.js';
 
 const router = Router();
 
 const queryVectorDbSchema = z.object({
-  userId: z.string().uuid(),
   topN: z.coerce.number().int().positive().max(50).default(5),
   text: z.string().trim().min(1, 'text is required'),
   vectorDimension: z.coerce.number().int().positive().optional(),
@@ -22,8 +22,14 @@ function toPgVectorString(values: number[]): string {
   return `[${values.map((value) => Number.isFinite(value) ? value : 0).join(',')}]`;
 }
 
-router.post('/', validateBody(queryVectorDbSchema), async (req, res, next) => {
+router.post('/', requireAuth, validateBody(queryVectorDbSchema), async (req, res, next) => {
   try {
+    const userId = req.user?.id;
+    if (!userId) {
+      res.status(401).json({ error: 'Unauthorized' });
+      return;
+    }
+
     const body = req.body as z.infer<typeof queryVectorDbSchema>;
     const requestedVectorSize = body.vectorDimension ?? pgVectorSize;
     const vectorSize = Number.isInteger(requestedVectorSize) && requestedVectorSize > 0
@@ -55,11 +61,11 @@ router.post('/', validateBody(queryVectorDbSchema), async (req, res, next) => {
         ORDER BY embedding <=> $1::vector(${vectorSize}) ASC
         LIMIT $3
       `,
-      [toPgVectorString(queryVector), body.userId, body.topN],
+      [toPgVectorString(queryVector), userId, body.topN],
     );
 
     res.status(200).json({
-      userId: body.userId,
+      userId,
       topN: body.topN,
       queryText: body.text,
       results: result.rows.map((row) => ({
@@ -77,3 +83,5 @@ router.post('/', validateBody(queryVectorDbSchema), async (req, res, next) => {
 });
 
 export default router;
+
+

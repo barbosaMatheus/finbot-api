@@ -7,8 +7,8 @@
     "test": "jest --passWithNoTests",
     "dev": "tsx watch src/server.ts",
     "build": "tsc -p tsconfig.json",
+    "postbuild": "node -e \"require('node:fs').cpSync('src/db/migrations','dist/db/migrations',{recursive:true})\"",
     "start": "node dist/server.js",
-    "migrate:base-intelligence": "tsx src/migrations/001-create-base-intelligence-table.ts",
     "seed:db": "tsx src/db/seed-database.ts"
   },
   "dependencies": {
@@ -18,10 +18,9 @@
     "dotenv": "^16.6.0",
     "express": "^4.21.2",
     "helmet": "^8.0.0",
-    "jest": "^30.4.2",
     "jose": "^6.2.3",
     "pg": "^8.22.0",
-    "ts-jest": "^29.4.11",
+    "plaid": "^45.0.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {
@@ -33,7 +32,9 @@
     "@types/node": "^22.10.1",
     "@types/pg": "^8.20.0",
     "@types/supertest": "^7.2.0",
+    "jest": "^30.4.2",
     "supertest": "^7.2.2",
+    "ts-jest": "^29.4.11",
     "tsx": "^4.19.0",
     "typescript": "^5.7.3"
   }

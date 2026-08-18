@@ -1,0 +1,415 @@
+import type { AccountBase } from 'plaid';
+
+import { pool } from '../db.js';
+import { decryptSecret, encryptSecret } from '../lib/crypto.js';
+import {
+  PLAID_CLIENT_NAME,
+  getHostedLinkRedirectUri,
+  getPlaidAndroidPackageName,
+  getPlaidClient,
+  getPlaidCountryCodes,
+  getPlaidProducts,
+  getPlaidRedirectUri,
+} from '../lib/plaid.js';
+import {
+  PlaidError,
+  type HostedLinkCompletion,
+  type LinkTokenResult,
+  type PlaidAccountSummary,
+  type PlaidConnection,
+} from '../types/plaid.js';
+
+type PlaidItemRow = {
+  id: string;
+  item_id: string;
+  institution_id: string | null;
+  institution_name: string | null;
+  status: string;
+  created_at: Date;
+};
+
+type PlaidAccountRow = {
+  plaid_item_id: string;
+  account_id: string;
+  name: string;
+  official_name: string | null;
+  mask: string | null;
+  type: string;
+  subtype: string | null;
+  current_balance: string | null;
+  available_balance: string | null;
+  iso_currency_code: string | null;
+};
+
+/** NUMERIC comes back from pg as a string to preserve precision. */
+function toNumber(value: string | null): number | null {
+  if (value === null) {
+    return null;
+  }
+
+  const parsed = Number(value);
+
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function toAccountSummary(row: PlaidAccountRow): PlaidAccountSummary {
+  return {
+    accountId: row.account_id,
+    name: row.name,
+    officialName: row.official_name,
+    mask: row.mask,
+    type: row.type,
+    subtype: row.subtype,
+    currentBalance: toNumber(row.current_balance),
+    availableBalance: toNumber(row.available_balance),
+    isoCurrencyCode: row.iso_currency_code,
+  };
+}
+
+function toConnection(
+  item: PlaidItemRow,
+  accounts: PlaidAccountRow[],
+): PlaidConnection {
+  return {
+    id: item.id,
+    itemId: item.item_id,
+    institutionId: item.institution_id,
+    institutionName: item.institution_name,
+    status: item.status,
+    createdAt: item.created_at.toISOString(),
+    accounts: accounts.map(toAccountSummary),
+  };
+}
+
+/**
+ * Plaid errors arrive as axios errors with the useful detail nested in the
+ * response body. Surface the display message without leaking our credentials
+ * or the raw axios payload into logs.
+ */
+function toPlaidError(err: unknown, fallback: string): PlaidError {
+  if (err instanceof PlaidError) {
+    return err;
+  }
+
+  const response = (
+    err as { response?: { data?: { error_message?: string; error_code?: string } } }
+  )?.response;
+  const data = response?.data;
+
+  if (data?.error_message) {
+    console.error(`[plaid] ${data.error_code ?? 'error'}: ${data.error_message}`);
+
+    // Plaid issues a separate secret per environment, and using the wrong one
+    // gives no hint that the environment is the problem.
+    if (data.error_code === 'INVALID_API_KEYS') {
+      return new PlaidError(
+        `${data.error_message} — check that PLAID_SECRET is the secret for PLAID_ENV=${
+          process.env.PLAID_ENV ?? 'sandbox'
+        }.`,
+        502,
+      );
+    }
+
+    return new PlaidError(data.error_message, 502);
+  }
+
+  console.error('[plaid]', err);
+
+  return new PlaidError(fallback, 502);
+}
+
+/**
+ * Step 1 of the standard Plaid flow: create a short-lived link_token scoped to
+ * this user. `hosted_link` is always requested so the web client (which cannot
+ * load Plaid's native module) has a URL it can open in a browser.
+ */
+export async function createLinkToken(userId: string): Promise<LinkTokenResult> {
+  const client = getPlaidClient();
+  const redirectUri = getPlaidRedirectUri();
+  const androidPackageName = getPlaidAndroidPackageName();
+  const completionRedirectUri = getHostedLinkRedirectUri();
+
+  try {
+    const { data } = await client.linkTokenCreate({
+      user: { client_user_id: userId },
+      client_name: PLAID_CLIENT_NAME,
+      products: getPlaidProducts(),
+      country_codes: getPlaidCountryCodes(),
+      language: 'en',
+      ...(redirectUri ? { redirect_uri: redirectUri } : {}),
+      ...(androidPackageName ? { android_package_name: androidPackageName } : {}),
+      hosted_link: completionRedirectUri
+        ? { completion_redirect_uri: completionRedirectUri }
+        : {},
+    });
+
+    return {
+      linkToken: data.link_token,
+      expiration: data.expiration ?? null,
+      hostedLinkUrl: data.hosted_link_url ?? null,
+    };
+  } catch (err) {
+    throw toPlaidError(err, 'Could not start a bank connection session');
+  }
+}
+
+/**
+ * Step 3 of the standard flow: swap the short-lived public_token for a
+ * long-lived access_token, then snapshot the Item's accounts so the app has
+ * real data to show. The access token is encrypted before it touches the DB.
+ */
+export async function exchangePublicToken(
+  userId: string,
+  publicToken: string,
+): Promise<PlaidConnection> {
+  const client = getPlaidClient();
+
+  let accessToken: string;
+  let itemId: string;
+
+  try {
+    const { data } = await client.itemPublicTokenExchange({
+      public_token: publicToken,
+    });
+
+    accessToken = data.access_token;
+    itemId = data.item_id;
+  } catch (err) {
+    throw toPlaidError(err, 'Could not complete the bank connection');
+  }
+
+  let accounts: AccountBase[] = [];
+  let institutionId: string | null = null;
+
+  try {
+    const { data } = await client.accountsGet({ access_token: accessToken });
+    accounts = data.accounts;
+    institutionId = data.item.institution_id ?? null;
+  } catch (err) {
+    throw toPlaidError(err, 'Connected the bank but could not read accounts');
+  }
+
+  const institutionName = await resolveInstitutionName(institutionId);
+
+  return persistConnection({
+    userId,
+    itemId,
+    accessToken,
+    institutionId,
+    institutionName,
+    accounts,
+  });
+}
+
+/**
+ * Web fallback: Hosted Link runs in a browser tab and has no callback into the
+ * app, so the client polls this with the link_token it was handed. Once Plaid
+ * reports a finished session we pull the public_token out of it and run the
+ * normal exchange.
+ */
+export async function completeHostedLink(
+  userId: string,
+  linkToken: string,
+): Promise<HostedLinkCompletion> {
+  const client = getPlaidClient();
+
+  let publicToken: string | undefined;
+
+  try {
+    const { data } = await client.linkTokenGet({ link_token: linkToken });
+
+    publicToken = data.link_sessions
+      ?.flatMap((session) => session.results?.item_add_results ?? [])
+      .find((result) => Boolean(result.public_token))?.public_token;
+  } catch (err) {
+    throw toPlaidError(err, 'Could not check the bank connection session');
+  }
+
+  if (!publicToken) {
+    return { status: 'pending' };
+  }
+
+  const connection = await exchangePublicToken(userId, publicToken);
+
+  return { status: 'connected', connection };
+}
+
+/** Best-effort: a missing institution name should never fail the link. */
+async function resolveInstitutionName(
+  institutionId: string | null,
+): Promise<string | null> {
+  if (!institutionId) {
+    return null;
+  }
+
+  try {
+    const { data } = await getPlaidClient().institutionsGetById({
+      institution_id: institutionId,
+      country_codes: getPlaidCountryCodes(),
+    });
+
+    return data.institution.name;
+  } catch (err) {
+    console.error('[plaid] could not resolve institution name', err);
+    return null;
+  }
+}
+
+type PersistConnectionInput = {
+  userId: string;
+  itemId: string;
+  accessToken: string;
+  institutionId: string | null;
+  institutionName: string | null;
+  accounts: AccountBase[];
+};
+
+/**
+ * Upsert on item_id so re-linking the same institution refreshes the row (and
+ * its access token) instead of erroring on the unique constraint.
+ */
+async function persistConnection(
+  input: PersistConnectionInput,
+): Promise<PlaidConnection> {
+  const client = await pool.connect();
+
+  try {
+    await client.query('BEGIN');
+
+    const { rows: itemRows } = await client.query<PlaidItemRow>(
+      `INSERT INTO plaid_items (
+         user_id, item_id, access_token_encrypted, institution_id, institution_name, status
+       )
+       VALUES ($1, $2, $3, $4, $5, 'active')
+       ON CONFLICT (item_id) DO UPDATE SET
+         access_token_encrypted = EXCLUDED.access_token_encrypted,
+         institution_id = EXCLUDED.institution_id,
+         institution_name = EXCLUDED.institution_name,
+         status = 'active',
+         updated_at = NOW()
+       RETURNING id, item_id, institution_id, institution_name, status, created_at`,
+      [
+        input.userId,
+        input.itemId,
+        encryptSecret(input.accessToken),
+        input.institutionId,
+        input.institutionName,
+      ],
+    );
+
+    const item = itemRows[0];
+
+    if (!item) {
+      throw new PlaidError('Could not save the bank connection', 500);
+    }
+
+    for (const account of input.accounts) {
+      await client.query(
+        `INSERT INTO plaid_accounts (
+           plaid_item_id, account_id, name, official_name, mask, type, subtype,
+           current_balance, available_balance, iso_currency_code
+         )
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+         ON CONFLICT (account_id) DO UPDATE SET
+           plaid_item_id = EXCLUDED.plaid_item_id,
+           name = EXCLUDED.name,
+           official_name = EXCLUDED.official_name,
+           mask = EXCLUDED.mask,
+           type = EXCLUDED.type,
+           subtype = EXCLUDED.subtype,
+           current_balance = EXCLUDED.current_balance,
+           available_balance = EXCLUDED.available_balance,
+           iso_currency_code = EXCLUDED.iso_currency_code,
+           updated_at = NOW()`,
+        [
+          item.id,
+          account.account_id,
+          account.name,
+          account.official_name ?? null,
+          account.mask ?? null,
+          account.type,
+          account.subtype ?? null,
+          account.balances.current ?? null,
+          account.balances.available ?? null,
+          account.balances.iso_currency_code ?? null,
+        ],
+      );
+    }
+
+    const { rows: accountRows } = await client.query<PlaidAccountRow>(
+      `SELECT plaid_item_id, account_id, name, official_name, mask, type, subtype,
+              current_balance, available_balance, iso_currency_code
+       FROM plaid_accounts
+       WHERE plaid_item_id = $1
+       ORDER BY name`,
+      [item.id],
+    );
+
+    await client.query('COMMIT');
+
+    return toConnection(item, accountRows);
+  } catch (err) {
+    await client.query('ROLLBACK');
+
+    if (err instanceof Error && err.message.includes('violates foreign key')) {
+      throw new PlaidError('User not found', 404);
+    }
+
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+/** Everything this user has linked. Drives the connected state in the UI. */
+export async function listConnections(userId: string): Promise<PlaidConnection[]> {
+  const { rows: itemRows } = await pool.query<PlaidItemRow>(
+    `SELECT id, item_id, institution_id, institution_name, status, created_at
+     FROM plaid_items
+     WHERE user_id = $1
+     ORDER BY created_at`,
+    [userId],
+  );
+
+  if (itemRows.length === 0) {
+    return [];
+  }
+
+  const { rows: accountRows } = await pool.query<PlaidAccountRow>(
+    `SELECT plaid_item_id, account_id, name, official_name, mask, type, subtype,
+            current_balance, available_balance, iso_currency_code
+     FROM plaid_accounts
+     WHERE plaid_item_id = ANY($1::uuid[])
+     ORDER BY name`,
+    [itemRows.map((item) => item.id)],
+  );
+
+  return itemRows.map((item) =>
+    toConnection(
+      item,
+      accountRows.filter((account) => account.plaid_item_id === item.id),
+    ),
+  );
+}
+
+/**
+ * Decrypt the stored access token for a user's Item. Not used by the link flow
+ * itself — this is the seam the transactions/RAG work will call.
+ */
+export async function getAccessTokenForItem(
+  userId: string,
+  itemId: string,
+): Promise<string> {
+  const { rows } = await pool.query<{ access_token_encrypted: string }>(
+    'SELECT access_token_encrypted FROM plaid_items WHERE user_id = $1 AND item_id = $2',
+    [userId, itemId],
+  );
+
+  const row = rows[0];
+
+  if (!row) {
+    throw new PlaidError('Bank connection not found', 404);
+  }
+
+  return decryptSecret(row.access_token_encrypted);
+}

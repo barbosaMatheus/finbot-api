@@ -14,11 +14,17 @@ jest.mock('../src/routes/embbed-text', () => ({
   buildEmbeddingVector: jest.fn(() => [0.5, 0.5, 0.5]),
 }));
 
+jest.mock('../src/lib/jwt.js', () => ({
+  verifyAccessToken: jest.fn(),
+}));
+
 import queryVectorDbRouter from '../src/routes/query-vector-db.js';
 import { pool } from '../src/db.js';
+import { verifyAccessToken } from '../src/lib/jwt.js';
 import { buildEmbeddingVector } from '../src/routes/embbed-text.js';
 
 const mockedPool = pool as any;
+const mockedVerifyAccessToken = verifyAccessToken as jest.MockedFunction<typeof verifyAccessToken>;
 const mockedBuildEmbeddingVector = buildEmbeddingVector as unknown as jest.Mock;
 
 const app = express();
@@ -29,10 +35,25 @@ describe('POST /query-vector-db', () => {
   beforeEach(() => {
     mockedPool.query.mockReset();
     mockedPool.end.mockReset();
+    mockedVerifyAccessToken.mockReset();
     mockedBuildEmbeddingVector.mockClear();
   });
 
-  it('returns the closest chunk text for a user and query text', async () => {
+  it('rejects requests without a JWT before hitting the database', async () => {
+    const response = await request(app)
+      .post('/query-vector-db')
+      .send({ text: 'sample query text' });
+
+    expect(response.status).toBe(401);
+    expect(mockedVerifyAccessToken).not.toHaveBeenCalled();
+    expect(mockedPool.query).not.toHaveBeenCalled();
+  });
+
+  it('returns the closest chunk text for the authenticated user', async () => {
+    mockedVerifyAccessToken.mockResolvedValue({
+      sub: '123e4567-e89b-12d3-a456-426614174000',
+      email: 'user@example.com',
+    });
     mockedPool.query.mockResolvedValue({
       rows: [
         {
@@ -49,8 +70,9 @@ describe('POST /query-vector-db', () => {
 
     const response = await request(app)
       .post('/query-vector-db')
+      .set('Authorization', 'Bearer valid-access-token')
       .send({
-        userId: '123e4567-e89b-12d3-a456-426614174000',
+        userId: 'different-user-id',
         topN: 3,
         text: 'sample query text',
         vectorDimension: 3,
@@ -74,11 +96,21 @@ describe('POST /query-vector-db', () => {
       }),
     );
     expect(mockedPool.query).toHaveBeenCalled();
+    expect(mockedPool.query.mock.calls[0][1][1]).toBe(
+      '123e4567-e89b-12d3-a456-426614174000',
+    );
+    expect(mockedVerifyAccessToken).toHaveBeenCalledWith('valid-access-token');
   });
 
   it('rejects invalid input before hitting the database', async () => {
+    mockedVerifyAccessToken.mockResolvedValue({
+      sub: '123e4567-e89b-12d3-a456-426614174000',
+      email: 'user@example.com',
+    });
+
     const response = await request(app)
       .post('/query-vector-db')
+      .set('Authorization', 'Bearer valid-access-token')
       .send({
         userId: 'not-a-uuid',
         topN: 0,

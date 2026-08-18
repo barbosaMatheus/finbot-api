@@ -1,4 +1,5 @@
 import express from 'express';
+import cookieParser from 'cookie-parser';
 import request from 'supertest';
 import { beforeEach, describe, expect, jest, it } from '@jest/globals';
 
@@ -28,6 +29,7 @@ const mockedVerifyAccessToken = verifyAccessToken as jest.MockedFunction<typeof 
 const mockedBuildEmbeddingVector = buildEmbeddingVector as unknown as jest.Mock;
 
 const app = express();
+app.use(cookieParser());
 app.use(express.json());
 app.use('/query-vector-db', queryVectorDbRouter);
 
@@ -70,7 +72,7 @@ describe('POST /query-vector-db', () => {
 
     const response = await request(app)
       .post('/query-vector-db')
-      .set('Authorization', 'Bearer valid-access-token')
+      .set('Cookie', 'finbot_access=valid-access-token')
       .send({
         userId: 'different-user-id',
         topN: 3,
@@ -110,7 +112,7 @@ describe('POST /query-vector-db', () => {
 
     const response = await request(app)
       .post('/query-vector-db')
-      .set('Authorization', 'Bearer valid-access-token')
+      .set('Cookie', 'finbot_access=valid-access-token')
       .send({
         userId: 'not-a-uuid',
         topN: 0,

@@ -10,6 +10,7 @@ import embedTextRouter from './routes/embbed-text.js';
 import queryVectorDbRouter from './routes/query-vector-db.js';
 import onboardingRouter from './routes/onboarding.js';
 import plaidRouter from './routes/plaid.js';
+import promptTemplateRouter from './routes/prompt-template.js';
 
 dotenv.config();
 
@@ -37,6 +38,7 @@ app.use('/plaid', plaidRouter);
 app.use('/base-intelligence', baseIntelligenceRouter);
 app.use('/embeddings', embedTextRouter);
 app.use('/query-vector-db', queryVectorDbRouter);
+app.use('/prompt-template', promptTemplateRouter);
 
 app.use((_req: Request, res: Response) => {
   res.status(404).json({ error: 'Route not found' });
@@ -48,3 +50,4 @@ app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
 });
 
 export default app;
+

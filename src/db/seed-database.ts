@@ -1,5 +1,6 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { readFile } from 'node:fs/promises';
 
 import dotenv from 'dotenv';
 
@@ -11,7 +12,7 @@ dotenv.config();
 export type SeedConfig = {
   shouldSeed: boolean;
   email: string;
-  password: string;
+  password: async function;
   onboardingComplete: boolean;
 };
 
@@ -131,16 +132,43 @@ export async function seedDatabase(env: NodeJS.ProcessEnv = process.env): Promis
     );
 
     if (baseIntelligenceExists.rows.length === 0) {
+      const baseIntelligencePath = path.join(path.dirname(fileURLToPath(import.meta.url)), 'example_base_intelligence.txt');
+      const baseIntelligenceContent = await readFile(baseIntelligencePath, 'utf-8');
       await client.query(
         `
           INSERT INTO base_intelligence (contents)
           VALUES ($1)
         `,
-        [
-          'Test base intelligence content for the FinBot RAG. This document covers budgeting, emergency funds, debt management, and saving goals for a sample user profile.',
-        ],
+        [baseIntelligenceContent],
       );
     }
+
+    // Seed prompt templates
+    await client.query(
+      `
+      INSERT INTO prompt_templates (template_name, prompt_contents)
+      VALUES ($1, $2)
+      ON CONFLICT (template_name) DO UPDATE SET
+        prompt_contents = EXCLUDED.prompt_contents
+    `,
+      [
+        'Test Template',
+        `You are a personal financial advisor that should give general personal finance advice to the user. You should not suggest buying, selling, trading, or otherwise modifying specific investments and assets. You should give personal finance advice related to budgeting, daily spending and how to partition income into several pools.
+
+### Retrieved Context
+<RETRIEVED_CONTEXT>
+
+### Base Intelligence
+<BASE_INTELLIGENCE>
+
+### Prompt
+Respond to the user prompt, while honoring your prime directives and using the retrieved context to answer the question. You should only respond if the response can be connected back directly to the retrieved context or base intelligence. If that is impossible then respond with a generic message saying that there is not enough context or collected data to answer with confidence.
+
+Below is the user prompt:
+<PROMPT_TEXT>`,
+      ],
+    );
+
 
     const existingContext = await client.query<{ id: string }>(
       'SELECT id FROM context_documents WHERE user_id = $1 LIMIT 1',

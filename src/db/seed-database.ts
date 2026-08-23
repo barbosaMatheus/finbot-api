@@ -12,7 +12,7 @@ dotenv.config();
 export type SeedConfig = {
   shouldSeed: boolean;
   email: string;
-  password: async function;
+  password: string;
   onboardingComplete: boolean;
 };
 

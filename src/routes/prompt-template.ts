@@ -6,7 +6,7 @@ import { validateBody } from '../middleware/validate.js';
 
 const router = Router();
 
-const buildPromptSchema = z.object({
+export const buildPromptSchema = z.object({
     user_id: z.string().uuid(),
     prompt_template_name: z.string(),
     prompt_text: z.string(),

@@ -1,8 +1,10 @@
+import { apiReference } from '@scalar/express-api-reference';
 import express, { type NextFunction, type Request, type Response } from 'express';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
 import dotenv from 'dotenv';
 import helmet from 'helmet';
+import { openApiDocument } from './lib/openapi.js';
 import authRouter from './routes/auth.js';
 import healthRouter from './routes/health.js';
 import baseIntelligenceRouter from './routes/base-intelligence.js';
@@ -30,6 +32,26 @@ app.use(
 );
 app.use(cookieParser());
 app.use(express.json());
+
+app.get('/openapi.json', (_req, res) => {
+  res.json(openApiDocument);
+});
+
+const scalarCsp = [
+  "default-src 'self'",
+  "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net",
+  "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net",
+  "img-src 'self' data: https://cdn.jsdelivr.net",
+  "font-src 'self' data: https://cdn.jsdelivr.net",
+  "connect-src 'self' https://cdn.jsdelivr.net",
+  "worker-src 'self' blob:",
+].join('; ');
+
+app.use('/docs', (_req: Request, res: Response, next: NextFunction) => {
+  res.setHeader('Content-Security-Policy', scalarCsp);
+  next();
+});
+app.use('/docs', apiReference({ url: '/openapi.json' }));
 
 app.use('/health', healthRouter);
 app.use('/auth', authRouter);

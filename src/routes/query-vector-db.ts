@@ -8,7 +8,7 @@ import { buildEmbeddingVector } from './embbed-text.js';
 
 const router = Router();
 
-const queryVectorDbSchema = z.object({
+export const queryVectorDbSchema = z.object({
   topN: z.coerce.number().int().positive().max(50).default(5),
   text: z.string().trim().min(1, 'text is required'),
   vectorDimension: z.coerce.number().int().positive().optional(),

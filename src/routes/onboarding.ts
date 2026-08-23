@@ -32,7 +32,7 @@ const dateOfBirthSchema = z
     return `${match[3]}-${match[1]}-${match[2]}`;
   });
 
-const onboardingSchema = z.object({
+export const onboardingSchema = z.object({
   fullName: z.string().trim().min(1),
   dateOfBirth: dateOfBirthSchema,
   maritalStatus: z.enum([

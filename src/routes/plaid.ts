@@ -13,11 +13,11 @@ import { PlaidError } from '../types/plaid.js';
 
 const router = Router();
 
-const exchangeSchema = z.object({
+export const exchangeSchema = z.object({
   publicToken: z.string().trim().min(1),
 });
 
-const hostedLinkSchema = z.object({
+export const hostedLinkSchema = z.object({
   linkToken: z.string().trim().min(1),
 });
 

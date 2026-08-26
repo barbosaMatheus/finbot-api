@@ -1,0 +1,301 @@
+import { describe, expect, jest, test } from '@jest/globals';
+
+import {
+  buildFinancialFacts,
+  computeFinancialFacts,
+  type FactsData,
+  type FactsJobDeps,
+} from '../src/services/financial-facts.service.js';
+import type {
+  FactsRecurringStream,
+  FactsTransaction,
+} from '../src/types/financial-facts.js';
+
+jest.spyOn(console, 'log').mockImplementation(() => {});
+
+const THROUGH = '2026-08-24';
+
+let counter = 0;
+
+function txn(overrides: Partial<FactsTransaction>): FactsTransaction {
+  counter += 1;
+  return {
+    rowId: `row-${counter}`,
+    amount: 100,
+    date: '2026-08-01',
+    pending: false,
+    role: 'expense',
+    displayBucket: 'Shopping',
+    accountType: 'depository',
+    linked: false,
+    ...overrides,
+  };
+}
+
+function stream(overrides: Partial<FactsRecurringStream>): FactsRecurringStream {
+  return {
+    streamKey: 'inflow:acme payroll',
+    direction: 'inflow',
+    displayName: 'ACME Payroll',
+    cadence: 'biweekly',
+    cadenceDays: 14,
+    averageAmount: 2600,
+    amountVariance: 0.01,
+    confidence: 'high',
+    lastDate: '2026-08-20',
+    userStatus: 'detected',
+    ...overrides,
+  };
+}
+
+function data(overrides: Partial<FactsData> = {}): FactsData {
+  return {
+    transactions: [],
+    accounts: [],
+    streams: [],
+    ...overrides,
+  };
+}
+
+describe('computeFinancialFacts', () => {
+  test('card purchase and its matched checking payment count exactly once', () => {
+    const facts = computeFinancialFacts(
+      data({
+        transactions: [
+          // The purchase: economic spend on the card.
+          txn({ amount: 500, role: 'expense', accountType: 'credit', displayBucket: 'Shopping' }),
+          // The payment pair, linked by reconciliation: pure movement.
+          txn({ amount: 500, role: 'credit_card_payment', linked: true }),
+          txn({ amount: -500, role: 'credit_card_payment', accountType: 'credit', linked: true }),
+        ],
+      }),
+      THROUGH,
+    );
+
+    expect(facts.spend.grossEconomicSpend).toBe(500);
+    expect(facts.movement.linkedCardPaymentTotal).toBe(500);
+    expect(facts.movement.externalCardPaymentTotal).toBe(0);
+    // Income never appears from the card-side credit.
+    expect(facts.income.totalObservedIncome).toBe(0);
+  });
+
+  test('unlinked card payment is a cash obligation, not spend', () => {
+    const facts = computeFinancialFacts(
+      data({
+        transactions: [txn({ amount: 820, role: 'credit_card_payment', linked: false })],
+      }),
+      THROUGH,
+    );
+
+    expect(facts.spend.grossEconomicSpend).toBe(0);
+    expect(facts.movement.externalCardPaymentTotal).toBe(820);
+    expect(
+      facts.cashObligations.components.externalCardPaymentsMonthly,
+    ).toBeGreaterThan(0);
+  });
+
+  test('refunds net against gross spend at the total level', () => {
+    const facts = computeFinancialFacts(
+      data({
+        transactions: [
+          txn({ amount: 500, role: 'expense' }),
+          txn({ amount: -500, role: 'refund_or_credit' }),
+        ],
+      }),
+      THROUGH,
+    );
+
+    expect(facts.spend.grossEconomicSpend).toBe(500);
+    expect(facts.spend.refundsAndCredits).toBe(500);
+    expect(facts.spend.netEconomicSpend).toBe(0);
+    expect(facts.spend.averageMonthlyEconomicSpend).toBe(0);
+  });
+
+  test('income estimate prefers recurring streams over observed average', () => {
+    const facts = computeFinancialFacts(
+      data({
+        transactions: [txn({ amount: -2600, role: 'earned_income', date: '2026-08-20' })],
+        streams: [stream({})],
+      }),
+      THROUGH,
+    );
+
+    expect(facts.income.estimateSource).toBe('recurring_streams');
+    // 2600 every 14 days ≈ 5653/month.
+    expect(facts.income.monthlyIncomeEstimate).toBeCloseTo(2600 * (30.44 / 14), 0);
+  });
+
+  test('without streams, income falls back to the observed monthly average', () => {
+    const facts = computeFinancialFacts(
+      data({
+        transactions: [
+          txn({ amount: -2600, role: 'earned_income', date: '2026-07-01' }),
+          txn({ amount: -2600, role: 'earned_income', date: '2026-08-01' }),
+        ],
+      }),
+      THROUGH,
+    );
+
+    expect(facts.income.estimateSource).toBe('observed_average');
+    expect(facts.income.monthlyIncomeEstimate).toBeGreaterThan(0);
+  });
+
+  test('dismissed streams are excluded from estimates', () => {
+    const facts = computeFinancialFacts(
+      data({ streams: [stream({ userStatus: 'dismissed' })] }),
+      THROUGH,
+    );
+
+    expect(facts.income.incomeStreams).toHaveLength(0);
+    expect(facts.income.estimateSource).toBe('none');
+  });
+
+  test('transfers and savings are movement, never spend or income', () => {
+    const facts = computeFinancialFacts(
+      data({
+        transactions: [
+          txn({ amount: 400, role: 'savings_or_investment_transfer' }),
+          txn({ amount: 250, role: 'internal_transfer' }),
+          txn({ amount: -250, role: 'internal_transfer' }),
+        ],
+      }),
+      THROUGH,
+    );
+
+    expect(facts.spend.grossEconomicSpend).toBe(0);
+    expect(facts.income.totalObservedIncome).toBe(0);
+    expect(facts.movement.savingsTransferTotal).toBe(400);
+    expect(facts.movement.internalTransferTotal).toBe(250);
+  });
+
+  test('monthly normalization uses the observed window', () => {
+    // ~six months of history: 100/month spend.
+    const transactions = [0, 1, 2, 3, 4, 5].map((month) =>
+      txn({
+        amount: 100,
+        role: 'expense',
+        date: `2026-0${3 + month}-01`.slice(0, 10),
+      }),
+    );
+
+    const facts = computeFinancialFacts(data({ transactions }), THROUGH);
+
+    expect(facts.period.oldestObservedDate).toBe('2026-03-01');
+    expect(facts.spend.averageMonthlyEconomicSpend).toBeGreaterThan(80);
+    expect(facts.spend.averageMonthlyEconomicSpend).toBeLessThan(120);
+  });
+
+  test('short windows are floored to ~one month to avoid wild extrapolation', () => {
+    const facts = computeFinancialFacts(
+      data({
+        transactions: [txn({ amount: 300, role: 'expense', date: '2026-08-23' })],
+      }),
+      THROUGH,
+    );
+
+    // Two days of data must not become 300 * 15 = 4500/month.
+    expect(facts.spend.averageMonthlyEconomicSpend).toBeLessThanOrEqual(330);
+  });
+
+  test('balances flow through the existing summarizeBalances', () => {
+    const facts = computeFinancialFacts(
+      data({
+        accounts: [
+          {
+            accountId: 'a',
+            name: 'Checking',
+            type: 'depository',
+            currentBalance: 3000,
+            availableBalance: 2800,
+          },
+          {
+            accountId: 'b',
+            name: 'Card',
+            type: 'credit',
+            currentBalance: 900,
+            availableBalance: null,
+          },
+        ],
+      }),
+      THROUGH,
+    );
+
+    expect(facts.balances.totalAssets).toBe(3000);
+    expect(facts.balances.totalLiabilities).toBe(900);
+    expect(facts.balances.availableToSpend).toBe(2800);
+    expect(facts.balances.netPosition).toBe(2100);
+  });
+
+  test('unknown share of outflow is explicit', () => {
+    const facts = computeFinancialFacts(
+      data({
+        transactions: [
+          txn({ amount: 300, role: 'expense' }),
+          txn({ amount: 100, role: 'unknown_outflow' }),
+          txn({ amount: -50, role: 'unknown_inflow' }),
+        ],
+      }),
+      THROUGH,
+    );
+
+    expect(facts.unknowns.unknownOutflowTotal).toBe(100);
+    expect(facts.unknowns.unknownInflowTotal).toBe(50);
+    expect(facts.unknowns.unknownShareOfOutflow).toBe(0.25);
+  });
+
+  test('pending transactions are excluded everywhere', () => {
+    const facts = computeFinancialFacts(
+      data({
+        transactions: [
+          txn({ amount: 100, role: 'expense', pending: true }),
+          txn({ amount: -2000, role: 'earned_income', pending: true }),
+        ],
+      }),
+      THROUGH,
+    );
+
+    expect(facts.spend.grossEconomicSpend).toBe(0);
+    expect(facts.income.totalObservedIncome).toBe(0);
+    expect(facts.period.oldestObservedDate).toBeNull();
+  });
+
+  test('same input produces identical output (reproducible)', () => {
+    const input = data({
+      transactions: [
+        txn({ amount: 120.55, role: 'expense', displayBucket: 'Food & Drink' }),
+        txn({ amount: -2600, role: 'earned_income' }),
+      ],
+      streams: [stream({})],
+    });
+
+    const first = computeFinancialFacts(input, THROUGH);
+    const second = computeFinancialFacts(input, THROUGH);
+
+    expect(second).toEqual(first);
+  });
+});
+
+describe('buildFinancialFacts job', () => {
+  test('computes facts from loaded data and chains the review build', async () => {
+    const chained: unknown[] = [];
+
+    const deps: FactsJobDeps = {
+      db: { query: async () => ({ rows: [], rowCount: 0 }) },
+      loadData: async () =>
+        data({ transactions: [txn({ amount: 100, role: 'expense' })] }),
+      enqueueNextStage: async (payload) => {
+        chained.push(payload);
+        return null;
+      },
+      now: () => new Date('2026-08-24T12:00:00Z'),
+    };
+
+    const facts = await buildFinancialFacts(
+      { userId: 'user-1', analysisRunId: 'run-1' },
+      deps,
+    );
+
+    expect(facts.period.throughDate).toBe('2026-08-24');
+    expect(chained).toEqual([{ userId: 'user-1', analysisRunId: 'run-1' }]);
+  });
+});

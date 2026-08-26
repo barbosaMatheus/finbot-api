@@ -265,6 +265,7 @@ export async function loadFactsData(
             (l_out.id IS NOT NULL OR l_in.id IS NOT NULL) AS linked
      FROM plaid_transactions t
      JOIN transaction_classifications c ON c.transaction_row_id = t.id
+     JOIN plaid_items i ON i.id = t.plaid_item_id AND i.status = 'active'
      LEFT JOIN plaid_accounts a ON a.account_id = t.account_id
      LEFT JOIN transaction_links l_out ON l_out.outflow_transaction_row_id = t.id
      LEFT JOIN transaction_links l_in ON l_in.inflow_transaction_row_id = t.id

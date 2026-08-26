@@ -11,6 +11,7 @@ import { validateBody } from '../middleware/validate.js';
 import {
   completeHostedLink,
   createLinkToken,
+  disconnectItem,
   exchangePublicToken,
   listConnections,
 } from '../services/plaid.service.js';
@@ -38,6 +39,11 @@ const hostedLinkSchema = z.object({
  *   GET  /plaid/connections            -> what this user has already linked
  */
 
+const linkTokenSchema = z.object({
+  mode: z.enum(['add', 'update']).optional(),
+  itemId: z.string().uuid().optional(),
+});
+
 router.post('/link-token', requireAuth, async (req, res, next) => {
   try {
     const userId = req.user?.id;
@@ -47,7 +53,42 @@ router.post('/link-token', requireAuth, async (req, res, next) => {
       return;
     }
 
-    res.status(200).json(await createLinkToken(userId));
+    const parsed = linkTokenSchema.safeParse(req.body ?? {});
+
+    if (!parsed.success) {
+      res.status(400).json({ error: 'Validation failed' });
+      return;
+    }
+
+    res.status(200).json(
+      await createLinkToken(userId, {
+        mode: parsed.data.mode,
+        itemRowId: parsed.data.itemId,
+      }),
+    );
+  } catch (err) {
+    if (err instanceof PlaidError) {
+      res.status(err.statusCode).json({ error: err.message });
+      return;
+    }
+
+    next(err);
+  }
+});
+
+/** Disconnect one institution and rebuild dependent analysis. */
+router.delete('/connections/:itemId', requireAuth, async (req, res, next) => {
+  try {
+    const userId = req.user?.id;
+
+    if (!userId) {
+      res.status(401).json({ error: 'Unauthorized' });
+      return;
+    }
+
+    const result = await disconnectItem(userId, String(req.params.itemId ?? ''));
+
+    res.status(200).json(result);
   } catch (err) {
     if (err instanceof PlaidError) {
       res.status(err.statusCode).json({ error: err.message });

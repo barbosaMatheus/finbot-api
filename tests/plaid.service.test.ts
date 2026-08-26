@@ -10,6 +10,7 @@ const mockClient = {
   institutionsGetById: jest.fn<AsyncMock>(),
   linkTokenCreate: jest.fn<AsyncMock>(),
   linkTokenGet: jest.fn<AsyncMock>(),
+  itemRemove: jest.fn<AsyncMock>(),
 };
 
 jest.mock('../src/lib/plaid', () => ({
@@ -29,7 +30,9 @@ const dbClient = {
 
 jest.mock('../src/db', () => ({
   pool: {
-    query: jest.fn(),
+    // Empty result set by default so incidental reads (duplicate
+    // detection, sync-state lookups) resolve harmlessly.
+    query: jest.fn(async () => ({ rows: [], rowCount: 0 })),
     connect: jest.fn(async () => dbClient),
   },
 }));
@@ -154,5 +157,117 @@ describe('exchangePublicToken', () => {
     expect(statements[0]).toBe('BEGIN');
     expect(statements).toContain('COMMIT');
     expect(dbClient.release).toHaveBeenCalled();
+  });
+});
+
+describe('duplicate Item detection (API-016)', () => {
+  test('re-linking the same institution with the same accounts reuses the existing Item', async () => {
+    const { pool } = jest.requireMock('../src/db') as {
+      pool: { query: jest.Mock };
+    };
+
+    // A different Plaid item_id, same institution, same account fingerprint.
+    mockClient.itemPublicTokenExchange.mockResolvedValue({
+      data: { access_token: 'access-sandbox-new', item_id: 'item-2' },
+    });
+
+    // listConnections inside duplicate detection: items, accounts, health.
+    pool.query
+      .mockResolvedValueOnce({ rows: [itemRow], rowCount: 1 })
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            plaid_item_id: 'item-row-1',
+            account_id: 'acc-1',
+            name: 'Plaid Checking',
+            official_name: 'Plaid Gold Checking',
+            mask: '0000',
+            type: 'depository',
+            subtype: 'checking',
+            current_balance: '110.00',
+            available_balance: '100.00',
+            iso_currency_code: 'USD',
+          },
+        ],
+        rowCount: 1,
+      })
+      .mockResolvedValueOnce({ rows: [], rowCount: 0 });
+
+    const connection = await exchangePublicToken('user-1', 'public-sandbox-2');
+
+    expect(connection.duplicate).toBe(true);
+    expect(connection.itemId).toBe('item-1');
+    // The unnecessary access token is revoked at Plaid.
+    expect(mockClient.itemRemove).toHaveBeenCalledWith({
+      access_token: 'access-sandbox-new',
+    });
+    // No new Item row was written.
+    const insertCalls = dbClient.query.mock.calls.filter((call) =>
+      String(call[0]).includes('INSERT INTO plaid_items'),
+    );
+    expect(insertCalls).toHaveLength(0);
+  });
+
+  test('same institution with different accounts is a real second Item', async () => {
+    const { pool } = jest.requireMock('../src/db') as {
+      pool: { query: jest.Mock };
+    };
+
+    mockClient.itemPublicTokenExchange.mockResolvedValue({
+      data: { access_token: 'access-sandbox-new', item_id: 'item-2' },
+    });
+    mockClient.accountsGet.mockResolvedValue({
+      data: {
+        accounts: [
+          {
+            account_id: 'acc-9',
+            name: 'Plaid Credit Card',
+            official_name: null,
+            mask: '9999',
+            type: 'credit',
+            subtype: 'credit card',
+            balances: { current: 250, available: null, iso_currency_code: 'USD' },
+          },
+        ],
+        item: { institution_id: 'ins_3' },
+      },
+    });
+
+    pool.query
+      .mockResolvedValueOnce({ rows: [itemRow], rowCount: 1 })
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            plaid_item_id: 'item-row-1',
+            account_id: 'acc-1',
+            name: 'Plaid Checking',
+            official_name: null,
+            mask: '0000',
+            type: 'depository',
+            subtype: 'checking',
+            current_balance: '110.00',
+            available_balance: '100.00',
+            iso_currency_code: 'USD',
+          },
+        ],
+        rowCount: 1,
+      })
+      .mockResolvedValueOnce({ rows: [], rowCount: 0 })
+      // ensureSyncState after persist
+      .mockResolvedValue({ rows: [], rowCount: 0 });
+
+    // Persist path uses the tx client; feed it the second item row.
+    dbClient.query.mockReset();
+    dbClient.query
+      .mockResolvedValueOnce({ rows: [] }) // BEGIN
+      .mockResolvedValueOnce({ rows: [{ ...itemRow, id: 'item-row-2', item_id: 'item-2' }] })
+      .mockResolvedValueOnce({ rows: [] }) // account upsert
+      .mockResolvedValueOnce({ rows: [] }) // account select
+      .mockResolvedValueOnce({ rows: [] }); // COMMIT
+
+    const connection = await exchangePublicToken('user-1', 'public-sandbox-2');
+
+    expect(connection.duplicate).toBeUndefined();
+    expect(mockClient.itemRemove).not.toHaveBeenCalled();
   });
 });

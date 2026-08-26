@@ -127,22 +127,54 @@ function toPlaidError(err: unknown, fallback: string): PlaidError {
  * this user. `hosted_link` is always requested so the web client (which cannot
  * load Plaid's native module) has a URL it can open in a browser.
  */
-export async function createLinkToken(userId: string): Promise<LinkTokenResult> {
+export async function createLinkToken(
+  userId: string,
+  options: { mode?: 'add' | 'update'; itemRowId?: string } = {},
+): Promise<LinkTokenResult> {
   const client = getPlaidClient();
   const redirectUri = getPlaidRedirectUri();
   const androidPackageName = getPlaidAndroidPackageName();
   const completionRedirectUri = getHostedLinkRedirectUri();
 
+  // Update mode: re-authenticate or change account selection on an
+  // existing Item. Requires the stored access token and takes no products.
+  let updateAccessToken: string | null = null;
+
+  if (options.mode === 'update') {
+    if (!options.itemRowId) {
+      throw new PlaidError('itemId is required for update mode', 400);
+    }
+
+    const { rows } = await pool.query<{ access_token_encrypted: string }>(
+      `SELECT access_token_encrypted FROM plaid_items WHERE id = $1 AND user_id = $2`,
+      [options.itemRowId, userId],
+    );
+
+    if (!rows[0]) {
+      throw new PlaidError('Bank connection not found', 404);
+    }
+
+    updateAccessToken = decryptSecret(rows[0].access_token_encrypted);
+  }
+
   try {
     const { data } = await client.linkTokenCreate({
       user: { client_user_id: userId },
       client_name: PLAID_CLIENT_NAME,
-      products: getPlaidProducts(),
       country_codes: getPlaidCountryCodes(),
       language: 'en',
-      // Up to 180 days of history so recurrence detection and baselines have
-      // enough signal. Institutions with less simply return what they have.
-      transactions: { days_requested: getRequestedHistoryDays() },
+      ...(updateAccessToken
+        ? {
+            access_token: updateAccessToken,
+            update: { account_selection_enabled: true },
+          }
+        : {
+            products: getPlaidProducts(),
+            // Up to 180 days of history so recurrence detection and
+            // baselines have enough signal. Institutions with less simply
+            // return what they have.
+            transactions: { days_requested: getRequestedHistoryDays() },
+          }),
       ...(redirectUri ? { redirect_uri: redirectUri } : {}),
       ...(androidPackageName ? { android_package_name: androidPackageName } : {}),
       hosted_link: completionRedirectUri
@@ -196,6 +228,29 @@ export async function exchangePublicToken(
     throw toPlaidError(err, 'Connected the bank but could not read accounts');
   }
 
+  // Duplicate detection: the same institution re-linked with the same
+  // visible accounts should not become a second Item with a second access
+  // token. The fresh token is removed and the existing connection returned.
+  const duplicate = await findDuplicateConnection(userId, itemId, institutionId, accounts);
+
+  if (duplicate) {
+    try {
+      await client.itemRemove({ access_token: accessToken });
+    } catch (err) {
+      logger.warn('could not remove duplicate Plaid item', {
+        userId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+
+    logger.info('duplicate institution link detected', {
+      userId,
+      itemId: duplicate.id,
+    });
+
+    return { ...duplicate, duplicate: true };
+  }
+
   const institutionName = await resolveInstitutionName(institutionId);
 
   const connection = await persistConnection({
@@ -210,6 +265,55 @@ export async function exchangePublicToken(
   await startItemSync(userId, connection.id);
 
   return connection;
+}
+
+/**
+ * A new Item duplicates an existing one when it is the same institution and
+ * every account it exposes matches an existing account's fingerprint
+ * (mask + type + subtype). Account ids differ between Items by design, so
+ * fingerprints are the only comparable identity.
+ */
+async function findDuplicateConnection(
+  userId: string,
+  newItemId: string,
+  institutionId: string | null,
+  accounts: AccountBase[],
+): Promise<PlaidConnection | null> {
+  if (!institutionId || accounts.length === 0) {
+    return null;
+  }
+
+  const existing = await listConnections(userId);
+
+  const fingerprint = (account: {
+    mask: string | null;
+    type: string;
+    subtype: string | null;
+  }): string => `${account.mask ?? ''}|${account.type}|${account.subtype ?? ''}`;
+
+  for (const connection of existing) {
+    if (connection.status !== 'active') continue;
+    if (connection.institutionId !== institutionId) continue;
+    if (connection.itemId === newItemId) continue;
+
+    const existingPrints = new Set(connection.accounts.map(fingerprint));
+
+    const allMatch = accounts.every((account) =>
+      existingPrints.has(
+        fingerprint({
+          mask: account.mask ?? null,
+          type: account.type,
+          subtype: account.subtype ?? null,
+        }),
+      ),
+    );
+
+    if (allMatch) {
+      return connection;
+    }
+  }
+
+  return null;
 }
 
 /**
@@ -394,7 +498,16 @@ async function persistConnection(
   }
 }
 
-/** Everything this user has linked. Drives the connected state in the UI. */
+type SyncHealthRow = {
+  plaid_item_id: string;
+  sync_status: 'pending' | 'syncing' | 'complete' | 'failed';
+  update_status: string;
+  oldest_transaction_date: string | null;
+  last_synced_at: Date | null;
+  last_error_code: string | null;
+};
+
+/** Everything this user has linked, with per-Item sync health. */
 export async function listConnections(userId: string): Promise<PlaidConnection[]> {
   const { rows: itemRows } = await pool.query<PlaidItemRow>(
     `SELECT id, item_id, institution_id, institution_name, status, created_at
@@ -408,21 +521,108 @@ export async function listConnections(userId: string): Promise<PlaidConnection[]
     return [];
   }
 
+  const itemIds = itemRows.map((item) => item.id);
+
   const { rows: accountRows } = await pool.query<PlaidAccountRow>(
     `SELECT plaid_item_id, account_id, name, official_name, mask, type, subtype,
             current_balance, available_balance, iso_currency_code
      FROM plaid_accounts
      WHERE plaid_item_id = ANY($1::uuid[])
      ORDER BY name`,
-    [itemRows.map((item) => item.id)],
+    [itemIds],
   );
 
-  return itemRows.map((item) =>
-    toConnection(
+  const { rows: healthRows } = await pool.query<SyncHealthRow>(
+    `SELECT plaid_item_id, sync_status, update_status,
+            oldest_transaction_date::text AS oldest_transaction_date,
+            last_synced_at, last_error_code
+     FROM plaid_sync_state
+     WHERE plaid_item_id = ANY($1::uuid[])`,
+    [itemIds],
+  );
+
+  const healthByItem = new Map(
+    healthRows.map((row) => [
+      row.plaid_item_id,
+      {
+        syncStatus: row.sync_status,
+        updateStatus: row.update_status,
+        oldestTransactionDate: row.oldest_transaction_date,
+        lastSyncedAt: row.last_synced_at?.toISOString() ?? null,
+        lastErrorCode: row.last_error_code,
+      },
+    ]),
+  );
+
+  return itemRows.map((item) => ({
+    ...toConnection(
       item,
       accountRows.filter((account) => account.plaid_item_id === item.id),
     ),
+    health: healthByItem.get(item.id) ?? null,
+  }));
+}
+
+/**
+ * Disconnect one Item: mark it inactive, revoke Plaid access (best
+ * effort), and recompute everything that depended on it — the derived
+ * onboarding flag immediately, and the analysis via a rebuild when a run
+ * is reviewable.
+ */
+export async function disconnectItem(
+  userId: string,
+  itemRowId: string,
+): Promise<{ recomputeQueued: boolean }> {
+  const { rows } = await pool.query<{ access_token_encrypted: string; status: string }>(
+    `SELECT access_token_encrypted, status
+     FROM plaid_items
+     WHERE id = $1 AND user_id = $2`,
+    [itemRowId, userId],
   );
+
+  const item = rows[0];
+
+  if (!item) {
+    throw new PlaidError('Bank connection not found', 404);
+  }
+
+  if (item.status !== 'disconnected') {
+    await pool.query(
+      `UPDATE plaid_items SET status = 'disconnected', updated_at = NOW() WHERE id = $1`,
+      [itemRowId],
+    );
+
+    try {
+      await getPlaidClient().itemRemove({
+        access_token: decryptSecret(item.access_token_encrypted),
+      });
+    } catch (err) {
+      logger.warn('could not revoke Plaid access on disconnect', {
+        itemId: itemRowId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
+  const lifecycle = await import('./onboarding-lifecycle.service.js');
+  const orchestration = await import('./analysis-orchestration.service.js');
+
+  await lifecycle.recomputeOnboardingComplete(pool, userId);
+
+  const run = await lifecycle.getLatestRun(userId);
+  let recomputeQueued = false;
+
+  if (run && (run.status === 'review_ready' || run.status === 'recomputing')) {
+    const corrections = await import('./corrections.service.js');
+    const result = await corrections.requestRecompute(userId);
+    recomputeQueued = result.status === 'queued';
+  } else if (run && run.status === 'waiting_for_history') {
+    await orchestration.maybeStartUserAnalysis(userId);
+  }
+
+  logger.info('item disconnected', { userId, itemId: itemRowId, recomputeQueued });
+
+  return { recomputeQueued };
 }
 
 /**

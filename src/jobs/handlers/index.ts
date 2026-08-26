@@ -5,4 +5,7 @@
  * Later pipeline tickets append their handler imports here.
  */
 
+import './item-sync.js';
+import './dead-letter.js';
+
 export {};

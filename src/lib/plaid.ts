@@ -127,3 +127,9 @@ export function getHostedLinkRedirectUri(): string | undefined {
 
 /** Shown to the user inside Link. Plaid caps this at 30 characters. */
 export const PLAID_CLIENT_NAME = 'FinBot';
+
+/** How many days of history to request from Plaid (design default: 180). */
+export function getRequestedHistoryDays(): number {
+  const parsed = Number.parseInt(process.env.PLAID_TRANSACTION_DAYS ?? '180', 10);
+  return Number.isFinite(parsed) && parsed > 0 ? Math.min(parsed, 730) : 180;
+}

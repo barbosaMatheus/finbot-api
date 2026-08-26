@@ -67,6 +67,37 @@ export async function enqueueItemSync(
 }
 
 /**
+ * Poll fallback while waiting for Plaid's historical data: re-sync this Item
+ * after a delay, still collapsed per Item so polls never pile up.
+ */
+export async function enqueueItemSyncDelayed(
+  payload: ItemJobPayload,
+  delaySeconds: number,
+  boss?: BossLike,
+): Promise<string | null> {
+  const instance = await resolveBoss(boss);
+
+  const jobId = await instance.sendDebounced(
+    JOB.SYNC_ITEM_TRANSACTIONS,
+    payload,
+    { startAfter: delaySeconds },
+    Math.max(delaySeconds, ITEM_SYNC_DEBOUNCE_SECONDS),
+    payload.plaidItemRowId,
+  );
+
+  logger.info('job enqueued', {
+    jobType: JOB.SYNC_ITEM_TRANSACTIONS,
+    jobId,
+    itemId: payload.plaidItemRowId,
+    userId: payload.userId,
+    startAfterSeconds: delaySeconds,
+    debounced: jobId === null,
+  });
+
+  return jobId;
+}
+
+/**
  * Kick off (or re-kick) the user-level analysis pipeline. The pipeline is a
  * chain — classify → reconcile → recurring → facts → review — and this
  * enqueues its first stage, debounced per user.

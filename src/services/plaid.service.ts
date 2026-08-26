@@ -10,7 +10,11 @@ import {
   getPlaidCountryCodes,
   getPlaidProducts,
   getPlaidRedirectUri,
+  getRequestedHistoryDays,
 } from '../lib/plaid.js';
+import { enqueueInitializeItemSync } from '../jobs/enqueue.js';
+import { logger } from '../lib/logger.js';
+import { ensureSyncState } from './transaction-store.service.js';
 import {
   PlaidError,
   type HostedLinkCompletion,
@@ -136,6 +140,9 @@ export async function createLinkToken(userId: string): Promise<LinkTokenResult> 
       products: getPlaidProducts(),
       country_codes: getPlaidCountryCodes(),
       language: 'en',
+      // Up to 180 days of history so recurrence detection and baselines have
+      // enough signal. Institutions with less simply return what they have.
+      transactions: { days_requested: getRequestedHistoryDays() },
       ...(redirectUri ? { redirect_uri: redirectUri } : {}),
       ...(androidPackageName ? { android_package_name: androidPackageName } : {}),
       hosted_link: completionRedirectUri
@@ -191,7 +198,7 @@ export async function exchangePublicToken(
 
   const institutionName = await resolveInstitutionName(institutionId);
 
-  return persistConnection({
+  const connection = await persistConnection({
     userId,
     itemId,
     accessToken,
@@ -199,6 +206,32 @@ export async function exchangePublicToken(
     institutionName,
     accounts,
   });
+
+  await startItemSync(userId, connection.id);
+
+  return connection;
+}
+
+/**
+ * Kick off the durable transaction sync for a freshly linked (or re-linked)
+ * Item. Best-effort by design: the connection is already committed, so a
+ * queue hiccup must not fail the link — declare-complete and retry paths
+ * re-ensure syncs as a backstop.
+ */
+export async function startItemSync(
+  userId: string,
+  plaidItemRowId: string,
+): Promise<void> {
+  try {
+    await ensureSyncState(pool, plaidItemRowId);
+    await enqueueInitializeItemSync({ userId, plaidItemRowId });
+  } catch (err) {
+    logger.error('could not enqueue item sync initialization', {
+      userId,
+      itemId: plaidItemRowId,
+      error: err instanceof Error ? err : String(err),
+    });
+  }
 }
 
 /**
@@ -412,4 +445,30 @@ export async function getAccessTokenForItem(
   }
 
   return decryptSecret(row.access_token_encrypted);
+}
+
+/** Same as above but addressed by our plaid_items.id row key (worker path). */
+export async function getAccessTokenForItemRow(
+  plaidItemRowId: string,
+): Promise<{ userId: string; accessToken: string; status: string }> {
+  const { rows } = await pool.query<{
+    user_id: string;
+    access_token_encrypted: string;
+    status: string;
+  }>(
+    'SELECT user_id, access_token_encrypted, status FROM plaid_items WHERE id = $1',
+    [plaidItemRowId],
+  );
+
+  const row = rows[0];
+
+  if (!row) {
+    throw new PlaidError('Bank connection not found', 404);
+  }
+
+  return {
+    userId: row.user_id,
+    accessToken: decryptSecret(row.access_token_encrypted),
+    status: row.status,
+  };
 }

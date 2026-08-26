@@ -8,7 +8,7 @@
  */
 
 import { logger } from '../lib/logger.js';
-import type { BossLike, JobName, JobPayloads } from './types.js';
+import { DEAD_LETTER_QUEUE, type BossLike, type JobName, type JobPayloads } from './types.js';
 
 export type JobHandler<N extends JobName> = (
   payload: JobPayloads[N],
@@ -18,6 +18,18 @@ export type JobHandler<N extends JobName> = (
 type HandlerMap = { [N in JobName]?: JobHandler<N> };
 
 const handlers: HandlerMap = {};
+
+export type DeadLetterHandler = (
+  payload: unknown,
+  context: { jobId: string },
+) => Promise<void>;
+
+let deadLetterHandler: DeadLetterHandler | null = null;
+
+/** Observer for jobs that exhausted their retries. */
+export function setDeadLetterHandler(handler: DeadLetterHandler): void {
+  deadLetterHandler = handler;
+}
 
 /** Later tickets call this at module load to plug their handler in. */
 export function setJobHandler<N extends JobName>(
@@ -36,6 +48,7 @@ export function clearJobHandlers(): void {
   for (const key of Object.keys(handlers)) {
     delete handlers[key as JobName];
   }
+  deadLetterHandler = null;
 }
 
 export async function registerJobHandlers(boss: BossLike): Promise<void> {
@@ -79,5 +92,17 @@ export async function registerJobHandlers(boss: BossLike): Promise<void> {
     });
 
     logger.info('job handler registered', { jobType: name });
+  }
+
+  if (deadLetterHandler) {
+    const handler = deadLetterHandler;
+
+    await boss.work(DEAD_LETTER_QUEUE, { batchSize: 1 }, async (jobs) => {
+      for (const job of jobs) {
+        await handler(job.data, { jobId: job.id });
+      }
+    });
+
+    logger.info('dead letter handler registered', {});
   }
 }

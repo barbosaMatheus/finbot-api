@@ -8,9 +8,8 @@
  * below them are thin persistence around the same rules.
  */
 
-import type { PoolClient } from 'pg';
-
 import { pool } from '../db.js';
+import type { Queryable } from '../lib/db-types.js';
 import type {
   AnalysisRunStatus,
   AnalysisRunSummary,
@@ -188,8 +187,6 @@ function toRunSummary(row: RunRow): AnalysisRunSummary {
     failedAt: row.failed_at?.toISOString() ?? null,
   };
 }
-
-type Queryable = Pick<PoolClient, 'query'>;
 
 export async function getLatestRun(
   userId: string,

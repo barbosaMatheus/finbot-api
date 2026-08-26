@@ -1,11 +1,20 @@
+import { existsSync } from 'node:fs';
 import { readFile, readdir } from 'node:fs/promises';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 
 import { pool } from '../db.js';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const migrationsDir = path.join(__dirname, 'migrations');
+// Anchor on the package cwd rather than import.meta so this module also
+// loads under the CommonJS test transform. Dev/tsx and jest run from the
+// package root with src/ present; the production image ships only dist/.
+const MIGRATION_DIR_CANDIDATES = [
+  path.resolve(process.cwd(), 'src', 'db', 'migrations'),
+  path.resolve(process.cwd(), 'dist', 'db', 'migrations'),
+];
+
+const migrationsDir =
+  MIGRATION_DIR_CANDIDATES.find((dir) => existsSync(dir)) ??
+  MIGRATION_DIR_CANDIDATES[0]!;
 
 export async function runMigrations(): Promise<void> {
   await pool.query(`

@@ -23,11 +23,11 @@ import { PlaidError } from '../types/plaid.js';
 
 const router = Router();
 
-const exchangeSchema = z.object({
+export const exchangeSchema = z.object({
   publicToken: z.string().trim().min(1),
 });
 
-const hostedLinkSchema = z.object({
+export const hostedLinkSchema = z.object({
   linkToken: z.string().trim().min(1),
 });
 
@@ -39,7 +39,7 @@ const hostedLinkSchema = z.object({
  *   GET  /plaid/connections            -> what this user has already linked
  */
 
-const linkTokenSchema = z.object({
+export const linkTokenSchema = z.object({
   mode: z.enum(['add', 'update']).optional(),
   itemId: z.string().uuid().optional(),
 });

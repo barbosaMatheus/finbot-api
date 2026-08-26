@@ -48,7 +48,7 @@ const dateOfBirthSchema = z
     return `${match[3]}-${match[1]}-${match[2]}`;
   });
 
-const onboardingSchema = z.object({
+export const onboardingSchema = z.object({
   fullName: z.string().trim().min(1),
   dateOfBirth: dateOfBirthSchema,
   maritalStatus: z.enum([
@@ -192,7 +192,7 @@ router.get('/financial-review', requireAuth, async (req, res, next) => {
   }
 });
 
-const correctionSchema = z.object({
+export const correctionSchema = z.object({
   action: z.enum([
     'accept_coverage_limitation',
     'keep_manual_value',
@@ -314,7 +314,7 @@ router.post('/linking-complete', requireAuth, async (req, res, next) => {
   }
 });
 
-const confirmSchema = z.object({
+export const confirmSchema = z.object({
   snapshotVersion: z.number().int().positive(),
 });
 

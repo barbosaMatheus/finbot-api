@@ -13,7 +13,7 @@ import { AuthError } from '../types/auth.js';
 
 const router = Router();
 
-const credentialsSchema = z.object({
+export const credentialsSchema = z.object({
   email: z.email(),
   password: z.string().min(8),
 });
@@ -104,7 +104,7 @@ router.post('/refresh', async (req, res, next) => {
  * cookie behavior. Refresh tokens are single-use and rotate server-side.
  */
 
-const nativeRefreshSchema = z.object({
+export const nativeRefreshSchema = z.object({
   refreshToken: z.string().min(1),
 });
 

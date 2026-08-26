@@ -7,7 +7,7 @@ import { registerPushToken, revokePushToken } from '../services/push.service.js'
 
 const router = Router();
 
-const registerSchema = z.object({
+export const registerSchema = z.object({
   token: z.string().trim().min(1),
   platform: z.enum(['ios', 'android', 'web']),
   deviceId: z.string().trim().min(1).optional(),

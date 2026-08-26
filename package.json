@@ -11,7 +11,8 @@
     "build": "tsc -p tsconfig.json",
     "postbuild": "node -e \"require('node:fs').cpSync('src/db/migrations','dist/db/migrations',{recursive:true})\"",
     "start": "node dist/server.js",
-    "seed:db": "tsx src/db/seed-database.ts"
+    "seed:db": "tsx src/db/seed-database.ts",
+    "openapi:generate": "tsx src/openapi/generate.ts --write"
   },
   "dependencies": {
     "bcrypt": "^6.0.0",

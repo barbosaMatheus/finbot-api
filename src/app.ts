@@ -38,6 +38,25 @@ app.use(
   }),
 );
 
+// The published API contract (API-003). Serves the checked-in document so
+// runtime and repository can never disagree; a contract test enforces that
+// the file matches what the schemas generate.
+let openApiCache: string | null = null;
+
+app.get('/openapi.json', async (_req: Request, res: Response) => {
+  try {
+    if (!openApiCache) {
+      const { readFile } = await import('node:fs/promises');
+      const { OPENAPI_FILE } = await import('./openapi/generate.js');
+      openApiCache = await readFile(OPENAPI_FILE, 'utf8');
+    }
+
+    res.type('application/json').send(openApiCache);
+  } catch {
+    res.status(500).json({ error: 'OpenAPI document unavailable' });
+  }
+});
+
 app.use('/health', healthRouter);
 app.use('/auth', authRouter);
 app.use('/onboarding', onboardingRouter);

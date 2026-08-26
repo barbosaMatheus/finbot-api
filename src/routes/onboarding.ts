@@ -4,10 +4,12 @@ import { z } from 'zod';
 
 import { requireAuth } from '../middleware/require-auth.js';
 import { validateBody } from '../middleware/validate.js';
+import { getFinancialReviewForUser } from '../services/review.service.js';
 import {
   getUserOnboarding,
   upsertUserOnboarding,
 } from '../services/user-info.service.js';
+import { OnboardingError } from '../types/onboarding.js';
 
 const router = Router();
 
@@ -152,6 +154,30 @@ router.get('/manual', requireAuth, async (req, res, next) => {
 
     res.status(200).json({ saved });
   } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * Latest financial review snapshot with coverage and actionable
+ * exceptions. 409 ANALYSIS_NOT_REVIEWABLE while analysis is still running.
+ */
+router.get('/financial-review', requireAuth, async (req, res, next) => {
+  try {
+    const userId = req.user?.id;
+
+    if (!userId) {
+      res.status(401).json({ error: 'Unauthorized' });
+      return;
+    }
+
+    res.status(200).json(await getFinancialReviewForUser(userId));
+  } catch (err) {
+    if (err instanceof OnboardingError) {
+      res.status(err.statusCode).json({ error: err.message, code: err.code });
+      return;
+    }
+
     next(err);
   }
 });

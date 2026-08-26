@@ -7,6 +7,7 @@
 
 import { classifyUserTransactions } from '../../services/classification.service.js';
 import { reconcileUserTransfers } from '../../services/reconciliation.service.js';
+import { detectUserRecurring } from '../../services/recurrence.service.js';
 import { setJobHandler } from '../register.js';
 import { JOB } from '../types.js';
 
@@ -16,4 +17,8 @@ setJobHandler(JOB.CLASSIFY_USER_TRANSACTIONS, async (payload) => {
 
 setJobHandler(JOB.RECONCILE_USER_TRANSFERS, async (payload) => {
   await reconcileUserTransfers(payload);
+});
+
+setJobHandler(JOB.DETECT_USER_RECURRING, async (payload) => {
+  await detectUserRecurring(payload);
 });

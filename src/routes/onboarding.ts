@@ -4,6 +4,10 @@ import { z } from 'zod';
 
 import { requireAuth } from '../middleware/require-auth.js';
 import { validateBody } from '../middleware/validate.js';
+import {
+  applyReviewItemAction,
+  requestRecompute,
+} from '../services/corrections.service.js';
 import { getFinancialReviewForUser } from '../services/review.service.js';
 import {
   getUserOnboarding,
@@ -172,6 +176,80 @@ router.get('/financial-review', requireAuth, async (req, res, next) => {
     }
 
     res.status(200).json(await getFinancialReviewForUser(userId));
+  } catch (err) {
+    if (err instanceof OnboardingError) {
+      res.status(err.statusCode).json({ error: err.message, code: err.code });
+      return;
+    }
+
+    next(err);
+  }
+});
+
+const correctionSchema = z.object({
+  action: z.enum([
+    'accept_coverage_limitation',
+    'keep_manual_value',
+    'use_observed_value',
+    'set_value',
+    'confirm_stream',
+    'dismiss_stream',
+    'reclassify_transaction',
+    'reclassify_merchant',
+  ]),
+  snapshotVersion: z.number().int().positive(),
+  value: z.record(z.string(), z.unknown()).optional(),
+});
+
+/** Correct or accept one review item. */
+router.patch(
+  '/financial-review/items/:id',
+  requireAuth,
+  validateBody(correctionSchema),
+  async (req, res, next) => {
+    try {
+      const userId = req.user?.id;
+
+      if (!userId) {
+        res.status(401).json({ error: 'Unauthorized' });
+        return;
+      }
+
+      const body = req.body as z.infer<typeof correctionSchema>;
+
+      const result = await applyReviewItemAction({
+        userId,
+        reviewItemId: String(req.params.id ?? ''),
+        action: body.action,
+        snapshotVersion: body.snapshotVersion,
+        value: body.value,
+      });
+
+      res.status(200).json(result);
+    } catch (err) {
+      if (err instanceof OnboardingError) {
+        res.status(err.statusCode).json({ error: err.message, code: err.code });
+        return;
+      }
+
+      next(err);
+    }
+  },
+);
+
+/** Rebuild facts and review after corrections. */
+router.post('/financial-review/recompute', requireAuth, async (req, res, next) => {
+  try {
+    const userId = req.user?.id;
+
+    if (!userId) {
+      res.status(401).json({ error: 'Unauthorized' });
+      return;
+    }
+
+    const result = await requestRecompute(userId);
+
+    res.status(202).json(result);
   } catch (err) {
     if (err instanceof OnboardingError) {
       res.status(err.statusCode).json({ error: err.message, code: err.code });

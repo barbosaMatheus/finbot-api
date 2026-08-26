@@ -366,8 +366,19 @@ async function defaultDeps(): Promise<ReviewBuildDeps> {
       return rows[0] ? Number(rows[0].monthly_take_home_income) : null;
     },
     transitionRun: (runId, to) => lifecycle.transitionRun(runId, to),
-    onReviewReady: async () => {
-      // Wired to the delayed push policy in API-015.
+    onReviewReady: async (payload, runStartedAt) => {
+      // Delay policy (API-015): a review that took longer than the expected
+      // window earns exactly one push per device. Fast completions rely on
+      // foreground polling and send nothing.
+      const push = await import('./push.service.js');
+      const enqueue = await import('../jobs/enqueue.js');
+
+      const elapsedSeconds =
+        (Date.now() - Date.parse(runStartedAt)) / 1000;
+
+      if (elapsedSeconds > push.expectedAnalysisWindowSeconds()) {
+        await enqueue.enqueueReviewReadyNotification(payload, 0);
+      }
     },
     now: () => new Date(),
   };

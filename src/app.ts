@@ -7,6 +7,7 @@ import authRouter from './routes/auth.js';
 import healthRouter from './routes/health.js';
 import baseIntelligenceRouter from './routes/base-intelligence.js';
 import embedTextRouter from './routes/embbed-text.js';
+import notificationsRouter from './routes/notifications.js';
 import onboardingRouter from './routes/onboarding.js';
 import plaidRouter from './routes/plaid.js';
 
@@ -40,6 +41,7 @@ app.use(
 app.use('/health', healthRouter);
 app.use('/auth', authRouter);
 app.use('/onboarding', onboardingRouter);
+app.use('/notifications', notificationsRouter);
 app.use('/plaid', plaidRouter);
 app.use('/base-intelligence', baseIntelligenceRouter);
 app.use('/embeddings', embedTextRouter);

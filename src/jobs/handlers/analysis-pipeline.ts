@@ -6,9 +6,14 @@
  */
 
 import { classifyUserTransactions } from '../../services/classification.service.js';
+import { reconcileUserTransfers } from '../../services/reconciliation.service.js';
 import { setJobHandler } from '../register.js';
 import { JOB } from '../types.js';
 
 setJobHandler(JOB.CLASSIFY_USER_TRANSACTIONS, async (payload) => {
   await classifyUserTransactions(payload);
+});
+
+setJobHandler(JOB.RECONCILE_USER_TRANSFERS, async (payload) => {
+  await reconcileUserTransfers(payload);
 });

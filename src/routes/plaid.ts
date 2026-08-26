@@ -1,6 +1,11 @@
 import { Router } from 'express';
 import { z } from 'zod';
 
+import { logger } from '../lib/logger.js';
+import {
+  isWebhookVerificationEnabled,
+  verifyPlaidWebhook,
+} from '../lib/webhook-verify.js';
 import { requireAuth } from '../middleware/require-auth.js';
 import { validateBody } from '../middleware/validate.js';
 import {
@@ -9,6 +14,10 @@ import {
   exchangePublicToken,
   listConnections,
 } from '../services/plaid.service.js';
+import {
+  processPlaidWebhook,
+  type PlaidWebhookPayload,
+} from '../services/webhook.service.js';
 import { PlaidError } from '../types/plaid.js';
 
 const router = Router();
@@ -103,6 +112,46 @@ router.post(
     }
   },
 );
+
+/**
+ * Plaid server-to-server webhook. Authenticated by signature, not session.
+ * Verifies (unless PLAID_WEBHOOK_VERIFY=false for local simulation),
+ * records + deduplicates the event, enqueues durable work, and returns
+ * quickly — long processing never happens on this request.
+ */
+router.post('/webhook', async (req, res) => {
+  const rawBody =
+    (req as { rawBody?: Buffer }).rawBody ??
+    Buffer.from(JSON.stringify(req.body ?? {}));
+
+  if (isWebhookVerificationEnabled()) {
+    try {
+      const header = req.headers['plaid-verification'];
+      await verifyPlaidWebhook(
+        rawBody,
+        typeof header === 'string' ? header : undefined,
+      );
+    } catch (err) {
+      logger.warn('rejected unverified webhook', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+      res.status(401).json({ error: 'Webhook verification failed' });
+      return;
+    }
+  }
+
+  try {
+    await processPlaidWebhook(rawBody, (req.body ?? {}) as PlaidWebhookPayload);
+    res.status(200).json({ received: true });
+  } catch (err) {
+    // Non-2xx makes Plaid retry the delivery, which is what we want when
+    // recording/enqueueing failed.
+    logger.error('webhook processing failed', {
+      error: err instanceof Error ? err : String(err),
+    });
+    res.status(500).json({ error: 'Webhook processing failed' });
+  }
+});
 
 router.get('/connections', requireAuth, async (req, res, next) => {
   try {

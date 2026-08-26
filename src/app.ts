@@ -27,7 +27,15 @@ app.use(
   }),
 );
 app.use(cookieParser());
-app.use(express.json());
+app.use(
+  express.json({
+    // Plaid webhook verification hashes the exact raw body; capture it
+    // before JSON parsing normalizes whitespace.
+    verify: (req, _res, buf) => {
+      (req as { rawBody?: Buffer }).rawBody = buf;
+    },
+  }),
+);
 
 app.use('/health', healthRouter);
 app.use('/auth', authRouter);

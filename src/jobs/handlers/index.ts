@@ -6,6 +6,7 @@
  */
 
 import './item-sync.js';
+import './analysis-pipeline.js';
 import './dead-letter.js';
 
 export {};

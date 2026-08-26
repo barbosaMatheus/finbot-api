@@ -8,6 +8,12 @@ import {
   applyReviewItemAction,
   requestRecompute,
 } from '../services/corrections.service.js';
+import {
+  confirmFinancialReview,
+  declareLinkingComplete,
+  getOnboardingStatus,
+  retryAnalysis,
+} from '../services/onboarding-status.service.js';
 import { getFinancialReviewForUser } from '../services/review.service.js';
 import {
   getUserOnboarding,
@@ -250,6 +256,116 @@ router.post('/financial-review/recompute', requireAuth, async (req, res, next) =
     const result = await requestRecompute(userId);
 
     res.status(202).json(result);
+  } catch (err) {
+    if (err instanceof OnboardingError) {
+      res.status(err.statusCode).json({ error: err.message, code: err.code });
+      return;
+    }
+
+    next(err);
+  }
+});
+
+/** The authoritative onboarding state: gates, phase, actions, analysis. */
+router.get('/status', requireAuth, async (req, res, next) => {
+  try {
+    const userId = req.user?.id;
+
+    if (!userId) {
+      res.status(401).json({ error: 'Unauthorized' });
+      return;
+    }
+
+    res.status(200).json(await getOnboardingStatus(userId));
+  } catch (err) {
+    if (err instanceof OnboardingError) {
+      res.status(err.statusCode).json({ error: err.message, code: err.code });
+      return;
+    }
+
+    next(err);
+  }
+});
+
+/**
+ * The user declares they are done adding institutions. Records declared
+ * coverage, backstops sync kick-off, creates the analysis run, and starts
+ * analysis if every Item is already terminal.
+ */
+router.post('/linking-complete', requireAuth, async (req, res, next) => {
+  try {
+    const userId = req.user?.id;
+
+    if (!userId) {
+      res.status(401).json({ error: 'Unauthorized' });
+      return;
+    }
+
+    await declareLinkingComplete(userId);
+
+    res.status(200).json(await getOnboardingStatus(userId));
+  } catch (err) {
+    if (err instanceof OnboardingError) {
+      res.status(err.statusCode).json({ error: err.message, code: err.code });
+      return;
+    }
+
+    next(err);
+  }
+});
+
+const confirmSchema = z.object({
+  snapshotVersion: z.number().int().positive(),
+});
+
+/** Confirm the latest review; the only path to onboarding completion. */
+router.post(
+  '/financial-review/confirm',
+  requireAuth,
+  validateBody(confirmSchema),
+  async (req, res, next) => {
+    try {
+      const userId = req.user?.id;
+
+      if (!userId) {
+        res.status(401).json({ error: 'Unauthorized' });
+        return;
+      }
+
+      const { snapshotVersion } = req.body as z.infer<typeof confirmSchema>;
+      const result = await confirmFinancialReview(userId, snapshotVersion);
+
+      res.status(200).json(result);
+    } catch (err) {
+      if (err instanceof OnboardingError) {
+        res.status(err.statusCode).json({ error: err.message, code: err.code });
+        return;
+      }
+
+      next(err);
+    }
+  },
+);
+
+/** Retry a failed analysis phase or failed institution syncs. */
+router.post('/retry', requireAuth, async (req, res, next) => {
+  try {
+    const userId = req.user?.id;
+
+    if (!userId) {
+      res.status(401).json({ error: 'Unauthorized' });
+      return;
+    }
+
+    const result = await retryAnalysis(userId);
+
+    res
+      .status(202)
+      .json(
+        result.status === 'already_running'
+          ? { ...result, code: 'RETRY_ALREADY_QUEUED' }
+          : result,
+      );
   } catch (err) {
     if (err instanceof OnboardingError) {
       res.status(err.statusCode).json({ error: err.message, code: err.code });

@@ -4,6 +4,10 @@ import {
   replaceUserTextEmbeddings,
   type PersistedEmbeddingResult,
 } from './embedding.service.js';
+import {
+  markManualProfileComplete,
+  recomputeOnboardingComplete,
+} from './onboarding-lifecycle.service.js';
 
 export type OnboardingPayload = {
   fullName: string;
@@ -251,12 +255,11 @@ export async function upsertUserOnboarding(
       ],
     );
 
-    await client.query(
-      `UPDATE users
-       SET on_boarding_complete = TRUE
-       WHERE id = $1::uuid`,
-      [userId],
-    );
+    // Saving manual answers completes the manual gate only. The final
+    // on_boarding_complete flag is derived and stays false until the
+    // financial review is confirmed (see onboarding-lifecycle.service).
+    await markManualProfileComplete(client, userId);
+    await recomputeOnboardingComplete(client, userId);
 
     await client.query('COMMIT');
 
@@ -276,4 +279,91 @@ export async function upsertUserOnboarding(
   } finally {
     client.release();
   }
+}
+
+function invert<K extends string, V extends string>(
+  record: Record<K, V>,
+): Record<V, K> {
+  return Object.fromEntries(
+    Object.entries(record).map(([key, value]) => [value, key]),
+  ) as Record<V, K>;
+}
+
+const MARITAL_STATUS_KEYS = invert(MARITAL_STATUS_LABELS);
+const EMPLOYMENT_STATUS_KEYS = invert(EMPLOYMENT_STATUS_LABELS);
+const SUBSCRIPTION_KEYS = invert(SUBSCRIPTION_LABELS);
+const FINANCIAL_GOAL_KEYS = invert(FINANCIAL_GOAL_LABELS);
+const MONEY_POOL_KEYS = invert(MONEY_POOL_LABELS);
+const RISK_COMFORT_KEYS = invert(RISK_COMFORT_LABELS);
+
+export type SavedOnboarding = {
+  payload: OnboardingPayload;
+  updatedAt: string;
+};
+
+/**
+ * The saved manual answers in the exact shape the wizard submits, so the
+ * client can resume without re-mapping labels. Returns null when the user has
+ * not saved anything yet.
+ */
+export async function getUserOnboarding(
+  userId: string,
+): Promise<SavedOnboarding | null> {
+  const { rows } = await pool.query<UserInfoRow>(
+    `SELECT * FROM user_info WHERE user_id = $1::uuid`,
+    [userId],
+  );
+
+  const row = rows[0];
+
+  if (!row) {
+    return null;
+  }
+
+  const { rows: contextRows } = await pool.query<{ context: string }>(
+    `SELECT context
+     FROM context_documents
+     WHERE user_id = $1::uuid AND source = $2
+     ORDER BY created_at DESC
+     LIMIT 1`,
+    [userId, ONBOARDING_CONTEXT_SOURCE],
+  );
+
+  const subscriptions = row.entertainment_subscriptions
+    .map((label) => SUBSCRIPTION_KEYS[label])
+    .filter((key): key is NonNullable<typeof key> => Boolean(key));
+
+  const payload: OnboardingPayload = {
+    fullName: row.full_name,
+    dateOfBirth: row.date_of_birth
+      ? row.date_of_birth.toISOString().slice(0, 10)
+      : '',
+    maritalStatus: MARITAL_STATUS_KEYS[row.marital_status] ?? 'prefer_not_to_say',
+    dependentsCount: row.dependents_count,
+    employmentStatus: EMPLOYMENT_STATUS_KEYS[row.employment_status] ?? 'unemployed',
+    monthlyTakeHomeIncome: Number(row.monthly_take_home_income),
+    monthlyHousingCosts: Number(row.monthly_housing_costs),
+    monthlyFoodSpend: Number(row.monthly_food_grocery_costs),
+    monthlyTransportationCosts: Number(row.monthly_transportation_costs),
+    subscriptions: subscriptions.length > 0 ? subscriptions : ['none'],
+    monthlyEntertainmentSubscriptionsCosts: Number(
+      row.monthly_entertainment_subscriptions_costs,
+    ),
+    savingsAndEmergencyFunds: Number(row.savings_emergency_funds),
+    totalDebt: Number(row.total_debt),
+    factorInDebtInterest: row.debt_interest_factor,
+    financialGoals: row.financial_goals
+      .map((label) => FINANCIAL_GOAL_KEYS[label])
+      .filter((key): key is NonNullable<typeof key> => Boolean(key)),
+    additionalMoneyPools: row.additional_money_pools
+      .map((label) => MONEY_POOL_KEYS[label])
+      .filter((key): key is NonNullable<typeof key> => Boolean(key)),
+    riskComfort: RISK_COMFORT_KEYS[row.investment_risk_comfort] ?? 'moderate',
+    additionalContext: contextRows[0]?.context ?? '',
+  };
+
+  return {
+    payload,
+    updatedAt: row.updated_at.toISOString(),
+  };
 }

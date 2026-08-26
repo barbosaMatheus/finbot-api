@@ -1,9 +1,13 @@
 import { Router } from 'express';
+import type { NextFunction, Request, Response } from 'express';
 import { z } from 'zod';
 
 import { requireAuth } from '../middleware/require-auth.js';
 import { validateBody } from '../middleware/validate.js';
-import { upsertUserOnboarding } from '../services/user-info.service.js';
+import {
+  getUserOnboarding,
+  upsertUserOnboarding,
+} from '../services/user-info.service.js';
 
 const router = Router();
 
@@ -96,7 +100,46 @@ const onboardingSchema = z.object({
   additionalContext: z.string(),
 });
 
-router.put('/', requireAuth, validateBody(onboardingSchema), async (req, res, next) => {
+/**
+ * Save the manual (non-derivable) onboarding answers. Completes the manual
+ * gate only — onboarding as a whole finishes when the financial review is
+ * confirmed, never here. `PUT /onboarding` is kept as an alias for the
+ * pre-redesign client.
+ */
+const saveManualHandler = [
+  requireAuth,
+  validateBody(onboardingSchema),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const userId = req.user?.id;
+
+      if (!userId) {
+        res.status(401).json({ error: 'Unauthorized' });
+        return;
+      }
+
+      const result = await upsertUserOnboarding(
+        userId,
+        req.body as z.infer<typeof onboardingSchema>,
+      );
+
+      res.status(200).json(result);
+    } catch (err) {
+      if (err instanceof Error && err.message.includes('violates foreign key')) {
+        res.status(404).json({ error: 'User not found' });
+        return;
+      }
+
+      next(err);
+    }
+  },
+] as const;
+
+router.put('/manual', ...saveManualHandler);
+router.put('/', ...saveManualHandler);
+
+/** Resume saved answers. 200 with `saved: null` when nothing is saved yet. */
+router.get('/manual', requireAuth, async (req, res, next) => {
   try {
     const userId = req.user?.id;
 
@@ -105,18 +148,10 @@ router.put('/', requireAuth, validateBody(onboardingSchema), async (req, res, ne
       return;
     }
 
-    const result = await upsertUserOnboarding(
-      userId,
-      req.body as z.infer<typeof onboardingSchema>,
-    );
+    const saved = await getUserOnboarding(userId);
 
-    res.status(200).json(result);
+    res.status(200).json({ saved });
   } catch (err) {
-    if (err instanceof Error && err.message.includes('violates foreign key')) {
-      res.status(404).json({ error: 'User not found' });
-      return;
-    }
-
     next(err);
   }
 });

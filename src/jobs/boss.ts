@@ -40,8 +40,14 @@ function createBoss(): PgBoss {
 /** Create all business queues (idempotent) with their retry policies. */
 export async function ensureQueues(instance: PgBoss): Promise<void> {
   await instance.createQueue(DEAD_LETTER_QUEUE, {
-    // Dead-lettered jobs wait for an operator; never expire them out.
-    retryLimit: 0,
+    // The DL consumer is the recovery path — it needs retries most: a
+    // transient DB error while mirroring a failure into business state
+    // would otherwise strand the user with zero record of it. Jobs are
+    // never expired out; exhausted ones stay failed for operator redrive.
+    retryLimit: 5,
+    retryDelay: 5,
+    retryBackoff: true,
+    retryDelayMax: 300,
     deleteAfterSeconds: 0,
   });
 

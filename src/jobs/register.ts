@@ -21,7 +21,13 @@ const handlers: HandlerMap = {};
 
 export type DeadLetterHandler = (
   payload: unknown,
-  context: { jobId: string },
+  context: {
+    jobId: string;
+    /** Queue the job originally failed on (null only for hand-crafted jobs). */
+    sourceName: string | null;
+    /** The failing attempt's stored output, when pg-boss captured one. */
+    failure: unknown;
+  },
 ) => Promise<void>;
 
 let deadLetterHandler: DeadLetterHandler | null = null;
@@ -97,11 +103,35 @@ export async function registerJobHandlers(boss: BossLike): Promise<void> {
   if (deadLetterHandler) {
     const handler = deadLetterHandler;
 
-    await boss.work(DEAD_LETTER_QUEUE, { batchSize: 1 }, async (jobs) => {
-      for (const job of jobs) {
-        await handler(job.data, { jobId: job.id });
-      }
-    });
+    // includeMetadata exposes sourceName (the queue the job failed on) so
+    // the handler can classify by origin instead of payload shape.
+    await boss.work(
+      DEAD_LETTER_QUEUE,
+      { batchSize: 1, includeMetadata: true },
+      async (jobs) => {
+        for (const job of jobs) {
+          const meta = job as { sourceName?: string | null; output?: unknown };
+
+          try {
+            await handler(job.data, {
+              jobId: job.id,
+              sourceName: meta.sourceName ?? null,
+              failure: meta.output ?? null,
+            });
+          } catch (err) {
+            logger.error('dead letter handling failed', {
+              jobId: job.id,
+              sourceQueue: meta.sourceName ?? 'unknown',
+              error: err instanceof Error ? err : String(err),
+            });
+
+            // Rethrow so the DL queue's own retry policy applies — this is
+            // the recovery path; silently losing it strands users.
+            throw err;
+          }
+        }
+      },
+    );
 
     logger.info('dead letter handler registered', {});
   }

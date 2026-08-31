@@ -11,10 +11,12 @@ import {
   clearJobHandlers,
   registerJobHandlers,
   registeredJobNames,
+  setDeadLetterHandler,
   setJobHandler,
 } from '../src/jobs/register.js';
 import {
   ALL_JOB_NAMES,
+  DEAD_LETTER_QUEUE,
   JOB,
   QUEUE_CONFIG,
   type BossLike,
@@ -201,6 +203,48 @@ describe('handler registration', () => {
         { id: 'j1', name: JOB.SYNC_ITEM_TRANSACTIONS, data: {} },
       ]),
     ).rejects.toThrow('boom');
+  });
+
+  test('dead-letter worker passes source-queue metadata and rethrows failures', async () => {
+    const boss = fakeBoss();
+    jest.spyOn(console, 'error').mockImplementation(() => {});
+    const contexts: unknown[] = [];
+
+    setDeadLetterHandler(async (payload, context) => {
+      contexts.push(context);
+
+      if ((payload as { boom?: boolean }).boom) {
+        throw new Error('dl boom');
+      }
+    });
+    await registerJobHandlers(boss);
+
+    const worker = boss.workers.find((w) => w.name === DEAD_LETTER_QUEUE);
+    expect(worker).toBeDefined();
+    // includeMetadata is what exposes sourceName on fetched DL jobs.
+    expect(worker!.options).toMatchObject({ includeMetadata: true });
+
+    await worker!.handler([
+      {
+        id: 'dl-1',
+        name: DEAD_LETTER_QUEUE,
+        data: { userId: 'u' },
+        sourceName: JOB.SEND_REVIEW_READY_NOTIFICATION,
+      } as never,
+    ]);
+
+    expect(contexts[0]).toMatchObject({
+      jobId: 'dl-1',
+      sourceName: JOB.SEND_REVIEW_READY_NOTIFICATION,
+    });
+
+    // A failing DL handler rethrows so the DL queue's retry policy applies —
+    // it used to be swallowed into a permanent, retryless failure.
+    await expect(
+      worker!.handler([
+        { id: 'dl-2', name: DEAD_LETTER_QUEUE, data: { boom: true } } as never,
+      ]),
+    ).rejects.toThrow('dl boom');
   });
 
   test('duplicate delivery of the same payload is tolerated by contract', async () => {

@@ -15,6 +15,7 @@ import type { UserAnalysisJobPayload } from '../jobs/types.js';
 import {
   ensureActiveRun,
   getActiveRun,
+  getLatestRun,
   transitionRun,
 } from './onboarding-lifecycle.service.js';
 
@@ -87,6 +88,7 @@ export type OrchestrationDeps = {
   db: Queryable;
   enqueueAnalysis(payload: UserAnalysisJobPayload): Promise<unknown>;
   getActiveRun: typeof getActiveRun;
+  getLatestRun: typeof getLatestRun;
   ensureActiveRun: typeof ensureActiveRun;
   transitionRun: typeof transitionRun;
   now(): Date;
@@ -99,6 +101,7 @@ async function defaultDeps(): Promise<OrchestrationDeps> {
     db: pool,
     enqueueAnalysis: (payload) => enqueue.enqueueUserAnalysis(payload),
     getActiveRun,
+    getLatestRun,
     ensureActiveRun,
     transitionRun,
     now: () => new Date(),
@@ -130,6 +133,16 @@ export async function maybeStartUserAnalysis(
   const items = await getItemSyncOverviews(userId, deps.db, deps.now());
 
   if (items.length === 0) {
+    return 'skipped';
+  }
+
+  // A confirmed latest run means this user finished onboarding. Routine
+  // post-completion webhooks land here via item sync; they must never spawn
+  // a fresh run, which would flip the status surface back to
+  // waiting_for_history and re-lock the app shell for a finished user.
+  const latest = await deps.getLatestRun(userId, deps.db);
+
+  if (latest?.status === 'confirmed') {
     return 'skipped';
   }
 

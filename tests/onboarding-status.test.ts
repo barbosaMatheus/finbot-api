@@ -153,6 +153,23 @@ describe('getOnboardingStatus', () => {
     expect(status.phase).toBe('complete');
     expect(status.onboardingComplete).toBe(true);
   });
+
+  test('a stray post-completion run cannot un-complete a finished user', async () => {
+    // Regression: a webhook-spawned run after confirmation used to flip
+    // onboardingComplete back to false and re-lock the app shell.
+    const status = await getOnboardingStatus(
+      'user-1',
+      statusDeps(
+        lifecycle({
+          latestRun: run({ status: 'waiting_for_history' }),
+          onboardingCompleteFlag: true,
+        }),
+        [item({})],
+      ),
+    );
+
+    expect(status.onboardingComplete).toBe(true);
+  });
 });
 
 describe('confirmFinancialReview', () => {

@@ -477,26 +477,32 @@ describe('maybeStartUserAnalysis', () => {
       },
     };
 
+    const runStatus = options.runStatus ?? 'waiting_for_history';
+    const runSummary = {
+      id: 'run-1',
+      status: runStatus as never,
+      requestedLookbackDays: 180,
+      ruleVersion: 'v1',
+      retryCount: 0,
+      errorCode: null,
+      errorMessage: null,
+      startedAt: '2026-08-24T00:00:00Z',
+      reviewReadyAt: null,
+      confirmedAt: null,
+      failedAt: null,
+    } as never;
+
     const deps: OrchestrationDeps = {
       db,
       enqueueAnalysis: async (p) => {
         enqueued.push(p);
         return null;
       },
+      // Mirrors production: a confirmed/superseded run is the latest run but
+      // never the active one.
+      getLatestRun: async () => runSummary,
       getActiveRun: async () =>
-        ({
-          id: 'run-1',
-          status: (options.runStatus ?? 'waiting_for_history') as never,
-          requestedLookbackDays: 180,
-          ruleVersion: 'v1',
-          retryCount: 0,
-          errorCode: null,
-          errorMessage: null,
-          startedAt: '2026-08-24T00:00:00Z',
-          reviewReadyAt: null,
-          confirmedAt: null,
-          failedAt: null,
-        }) as never,
+        runStatus === 'confirmed' || runStatus === 'superseded' ? null : runSummary,
       ensureActiveRun: async () => {
         throw new Error('should not create runs in these tests');
       },
@@ -560,6 +566,20 @@ describe('maybeStartUserAnalysis', () => {
 
     expect(await maybeStartUserAnalysis('user-1', deps)).toBe('skipped');
     expect(transitions).toEqual([]);
+  });
+
+  test('never spawns a new run for a user whose latest run is confirmed', async () => {
+    // Post-completion webhook syncs land here; the ensureActiveRun stub
+    // throws, so reaching 'skipped' proves no run was created.
+    const { deps, transitions, enqueued } = orchestrationDeps({
+      declared: true,
+      items: [{ sync_status: 'complete' }],
+      runStatus: 'confirmed',
+    });
+
+    expect(await maybeStartUserAnalysis('user-1', deps)).toBe('skipped');
+    expect(transitions).toEqual([]);
+    expect(enqueued).toEqual([]);
   });
 });
 

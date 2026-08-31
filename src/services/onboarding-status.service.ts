@@ -128,10 +128,14 @@ export async function getOnboardingStatus(
         }
       : null,
     availableActions,
+    // The persisted flag is set at confirmation and is forward-only; OR-ing
+    // it in keeps a finished user complete even if a later run appears and
+    // the latest-run gates momentarily read incomplete.
     onboardingComplete:
-      gates.manualProfileComplete &&
-      gates.analysisReviewable &&
-      gates.financialReviewConfirmed,
+      state.onboardingCompleteFlag ||
+      (gates.manualProfileComplete &&
+        gates.analysisReviewable &&
+        gates.financialReviewConfirmed),
   };
 }
 

@@ -305,7 +305,22 @@ export async function recomputeOnboardingComplete(
     latestRun,
   });
 
-  const complete = isOnboardingComplete(gates);
+  // Completion is forward-only: once any run has been confirmed (and the
+  // manual profile finished), later runs must never un-complete the user —
+  // otherwise a stray post-completion run would re-lock the app shell.
+  const { rows: confirmedRows } = await db.query<{ exists: boolean }>(
+    `SELECT EXISTS (
+       SELECT 1 FROM financial_analysis_runs
+       WHERE user_id = $1 AND status = 'confirmed'
+     ) AS exists`,
+    [userId],
+  );
+
+  const everConfirmed = confirmedRows[0]?.exists ?? false;
+
+  const complete =
+    isOnboardingComplete(gates) ||
+    (user.manual_profile_completed_at !== null && everConfirmed);
 
   await db.query(
     `UPDATE users SET on_boarding_complete = $2 WHERE id = $1`,

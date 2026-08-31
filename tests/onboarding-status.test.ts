@@ -322,11 +322,14 @@ describe('retryAnalysis', () => {
   function retryDeps(options: {
     runStatus: string;
     items: ItemSyncOverview[];
+    rekickedItems?: number;
+    analysisOutcome?: string;
   }) {
     const resets: unknown[][] = [];
     const enqueued: unknown[] = [];
     const transitions: string[] = [];
     const analysisChecks: string[] = [];
+    const syncEnsures: string[] = [];
 
     const db: Queryable = {
       async query<R>(text: string, values: unknown[] = []) {
@@ -372,11 +375,15 @@ describe('retryAnalysis', () => {
       },
       maybeStartAnalysis: async (userId) => {
         analysisChecks.push(userId);
-        return 'waiting';
+        return options.analysisOutcome ?? 'waiting';
+      },
+      ensureItemSyncs: async (userId) => {
+        syncEnsures.push(userId);
+        return options.rekickedItems ?? 0;
       },
     };
 
-    return { deps, resets, enqueued, transitions, analysisChecks };
+    return { deps, resets, enqueued, transitions, analysisChecks, syncEnsures };
   }
 
   test('failed run with failed items resets and re-syncs them', async () => {
@@ -409,5 +416,40 @@ describe('retryAnalysis', () => {
     await expect(retryAnalysis('user-1', deps)).rejects.toMatchObject({
       code: 'RETRY_NOT_AVAILABLE',
     });
+  });
+
+  // Regression: this branch used to early-return 'already_running' without
+  // doing anything, so a run whose analysis trigger was lost had no exit.
+  test('waiting run with genuinely in-flight syncs reports already_running but still re-evaluates', async () => {
+    const { deps, analysisChecks, syncEnsures } = retryDeps({
+      runStatus: 'waiting_for_history',
+      items: [item({ syncStatus: 'syncing', terminal: false, usable: false })],
+    });
+
+    expect(await retryAnalysis('user-1', deps)).toEqual({ status: 'already_running' });
+    expect(syncEnsures).toEqual(['user-1']);
+    expect(analysisChecks).toEqual(['user-1']);
+  });
+
+  test('waiting run with a lost analysis trigger re-starts and reports retry_queued', async () => {
+    const { deps, analysisChecks } = retryDeps({
+      runStatus: 'waiting_for_history',
+      items: [item({})],
+      analysisOutcome: 'started',
+    });
+
+    expect(await retryAnalysis('user-1', deps)).toEqual({ status: 'retry_queued' });
+    expect(analysisChecks).toEqual(['user-1']);
+  });
+
+  test('waiting run with a stranded sync chain re-kicks it and reports retry_queued', async () => {
+    const { deps, syncEnsures } = retryDeps({
+      runStatus: 'waiting_for_history',
+      items: [item({ syncStatus: 'pending', terminal: false, usable: false })],
+      rekickedItems: 1,
+    });
+
+    expect(await retryAnalysis('user-1', deps)).toEqual({ status: 'retry_queued' });
+    expect(syncEnsures).toEqual(['user-1']);
   });
 });

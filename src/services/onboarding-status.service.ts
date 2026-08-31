@@ -146,22 +146,12 @@ export async function getOnboardingStatus(
 export async function declareLinkingComplete(userId: string): Promise<void> {
   await lifecycleDeclareLinkingComplete(userId);
 
-  // Backstop: any active Item missing a sync kick-off gets one now.
-  const { rows } = await pool.query<{ id: string }>(
-    `SELECT i.id
-     FROM plaid_items i
-     LEFT JOIN plaid_sync_state s ON s.plaid_item_id = i.id
-     WHERE i.user_id = $1 AND i.status = 'active' AND s.plaid_item_id IS NULL`,
-    [userId],
-  );
-
-  if (rows.length > 0) {
-    const { startItemSync } = await import('./plaid.service.js');
-
-    for (const row of rows) {
-      await startItemSync(userId, row.id);
-    }
-  }
+  // Backstop: any active Item without a live sync chain gets one now. This
+  // covers more than a missing state row — a swallowed enqueue at link time
+  // leaves the Item at 'pending', and a lost poll chain leaves it 'syncing'
+  // forever; both used to slip through and strand the run.
+  const { ensureItemSyncs } = await import('./plaid.service.js');
+  await ensureItemSyncs(userId);
 
   await ensureActiveRun(userId);
   await maybeStartUserAnalysis(userId);
@@ -268,10 +258,14 @@ export type RetryDeps = {
   enqueueItemSync(payload: { plaidItemRowId: string; userId: string }): Promise<unknown>;
   transitionRun(runId: string, to: 'waiting_for_history'): Promise<void>;
   maybeStartAnalysis(userId: string): Promise<unknown>;
+  ensureItemSyncs(userId: string): Promise<number>;
 };
 
 async function defaultRetryDeps(): Promise<RetryDeps> {
-  const enqueue = await import('../jobs/enqueue.js');
+  const [enqueue, plaid] = await Promise.all([
+    import('../jobs/enqueue.js'),
+    import('./plaid.service.js'),
+  ]);
 
   return {
     db: pool,
@@ -279,6 +273,7 @@ async function defaultRetryDeps(): Promise<RetryDeps> {
     enqueueItemSync: (payload) => enqueue.enqueueItemSync(payload),
     transitionRun: (runId, to) => transitionRun(runId, to),
     maybeStartAnalysis: (userId) => maybeStartUserAnalysis(userId),
+    ensureItemSyncs: (userId) => plaid.ensureItemSyncs(userId),
   };
 }
 
@@ -311,8 +306,26 @@ export async function retryAnalysis(
     }
   }
 
+  // A waiting run with nothing failed used to answer already_running while
+  // doing nothing — a lie whenever the analysis trigger or a sync chain was
+  // lost (crash between declare-complete and kickoff, swallowed enqueue at
+  // link time). Re-kick dead sync chains and re-evaluate the start gate;
+  // answer from what actually happened.
   if (run.status === 'waiting_for_history' && failedItems.length === 0) {
-    return { status: 'already_running' };
+    const rekicked = await deps.ensureItemSyncs(userId);
+    const outcome = await deps.maybeStartAnalysis(userId);
+
+    logger.info('analysis retry evaluated waiting run', {
+      userId,
+      analysisRunId: run.id,
+      rekickedItems: rekicked,
+      outcome: String(outcome),
+    });
+
+    return {
+      status:
+        rekicked > 0 || outcome === 'started' ? 'retry_queued' : 'already_running',
+    };
   }
 
   for (const item of failedItems) {

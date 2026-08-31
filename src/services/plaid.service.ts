@@ -352,6 +352,47 @@ export async function startItemSync(
 }
 
 /**
+ * A 'syncing' Item whose state row has seen no write for this long has lost
+ * its poll chain (healthy sessions touch the row every poll interval).
+ */
+const STALE_SYNC_MINUTES = 15;
+
+/**
+ * Re-kick syncs for any active Item that should be syncing but has no live
+ * job chain: no sync-state row (the link-time enqueue failed before
+ * ensureSyncState), still 'pending' (it failed after), or 'syncing' with no
+ * progress for STALE_SYNC_MINUTES (poll chain lost). Idempotent — initialize
+ * jobs are singleton-keyed per Item and sync sessions take a cursor lock, so
+ * re-kicking a healthy Item is harmless. Returns how many were re-kicked.
+ */
+export async function ensureItemSyncs(userId: string): Promise<number> {
+  const { rows } = await pool.query<{ id: string }>(
+    `SELECT i.id
+     FROM plaid_items i
+     LEFT JOIN plaid_sync_state s ON s.plaid_item_id = i.id
+     WHERE i.user_id = $1
+       AND i.status = 'active'
+       AND (
+         s.plaid_item_id IS NULL
+         OR s.sync_status = 'pending'
+         OR (s.sync_status = 'syncing'
+             AND s.updated_at < NOW() - make_interval(mins => $2))
+       )`,
+    [userId, STALE_SYNC_MINUTES],
+  );
+
+  for (const row of rows) {
+    await startItemSync(userId, row.id);
+  }
+
+  if (rows.length > 0) {
+    logger.info('re-kicked stalled item syncs', { userId, count: rows.length });
+  }
+
+  return rows.length;
+}
+
+/**
  * Point every active Item at the configured webhook receiver. New Items get
  * the URL at link-token creation; this covers Items linked before
  * PLAID_WEBHOOK_URL was set (or after it changed). One Plaid call per active

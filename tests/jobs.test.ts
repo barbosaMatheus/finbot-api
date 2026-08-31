@@ -83,7 +83,7 @@ describe('queue configuration', () => {
     }
   });
 
-  test('the eight design job types all exist', () => {
+  test('the design job types plus the watchdog all exist', () => {
     expect(ALL_JOB_NAMES.sort()).toEqual(
       [
         'INITIALIZE_ITEM_SYNC',
@@ -94,6 +94,7 @@ describe('queue configuration', () => {
         'BUILD_FINANCIAL_FACTS',
         'BUILD_FINANCIAL_REVIEW',
         'SEND_REVIEW_READY_NOTIFICATION',
+        'SWEEP_STALE_RUNS',
       ].sort(),
     );
   });

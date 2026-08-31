@@ -13,6 +13,7 @@ export const JOB = {
   BUILD_FINANCIAL_FACTS: 'BUILD_FINANCIAL_FACTS',
   BUILD_FINANCIAL_REVIEW: 'BUILD_FINANCIAL_REVIEW',
   SEND_REVIEW_READY_NOTIFICATION: 'SEND_REVIEW_READY_NOTIFICATION',
+  SWEEP_STALE_RUNS: 'SWEEP_STALE_RUNS',
 } as const;
 
 export type JobName = (typeof JOB)[keyof typeof JOB];
@@ -40,6 +41,7 @@ export type JobPayloads = {
   [JOB.BUILD_FINANCIAL_FACTS]: UserAnalysisJobPayload;
   [JOB.BUILD_FINANCIAL_REVIEW]: UserAnalysisJobPayload;
   [JOB.SEND_REVIEW_READY_NOTIFICATION]: UserAnalysisJobPayload;
+  [JOB.SWEEP_STALE_RUNS]: Record<string, never>;
 };
 
 export type QueueConfig = {
@@ -75,6 +77,13 @@ export const QUEUE_CONFIG: Record<JobName, QueueConfig> = {
     ...DEFAULT_QUEUE_CONFIG,
     retryLimit: 3,
     retryDelayMax: 120,
+  },
+  // Periodic sweep; the next scheduled tick is its own retry, so failures
+  // barely need one.
+  [JOB.SWEEP_STALE_RUNS]: {
+    ...DEFAULT_QUEUE_CONFIG,
+    retryLimit: 1,
+    expireInSeconds: 300,
   },
 };
 

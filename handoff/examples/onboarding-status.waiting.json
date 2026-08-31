@@ -20,7 +20,8 @@
     },
     "startedAt": "2026-08-24T20:00:00Z",
     "reviewReadyAt": null,
-    "retryAllowed": false
+    "retryAllowed": false,
+    "errorCode": null
   },
   "availableActions": [
     "view_waiting",

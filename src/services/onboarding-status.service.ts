@@ -52,6 +52,8 @@ export type OnboardingStatusResponse = {
     startedAt: string;
     reviewReadyAt: string | null;
     retryAllowed: boolean;
+    /** Why the run failed (e.g. NO_USABLE_ITEM, ANALYSIS_JOB_FAILED, ANALYSIS_STALLED). */
+    errorCode: string | null;
   } | null;
   availableActions: OnboardingAction[];
   onboardingComplete: boolean;
@@ -125,6 +127,9 @@ export async function getOnboardingStatus(
           startedAt: run.startedAt,
           reviewReadyAt: run.reviewReadyAt,
           retryAllowed: run.status === 'failed' || anyItemFailed,
+          // Without this the client cannot distinguish "no usable bank
+          // data" from "a job crashed" — or say anything useful at all.
+          errorCode: run.errorCode,
         }
       : null,
     availableActions,

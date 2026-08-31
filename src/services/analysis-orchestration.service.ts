@@ -12,6 +12,7 @@ import { pool } from '../db.js';
 import type { Queryable } from '../lib/db-types.js';
 import { logger } from '../lib/logger.js';
 import type { UserAnalysisJobPayload } from '../jobs/types.js';
+import { OnboardingError } from '../types/onboarding.js';
 import {
   ensureActiveRun,
   getActiveRun,
@@ -191,4 +192,125 @@ export async function maybeStartUserAnalysis(
   });
 
   return 'started';
+}
+
+// ---------------------------------------------------------------------------
+// Stale-run watchdog
+// ---------------------------------------------------------------------------
+
+/** In-flight runs quiet this long get their pipeline re-enqueued. */
+export const STALL_REKICK_MINUTES = 15;
+
+/** In-flight runs quiet this long are failed retryably — no eternal spinner. */
+export const STALL_FAIL_MINUTES = 120;
+
+/** waiting_for_history runs quiet this long get syncs + gate re-evaluated. */
+export const WAITING_SWEEP_MINUTES = 30;
+
+export type SweepDeps = {
+  db: Queryable;
+  enqueueAnalysis(payload: UserAnalysisJobPayload): Promise<unknown>;
+  ensureItemSyncs(userId: string): Promise<number>;
+  maybeStartAnalysis(userId: string): Promise<unknown>;
+  transitionRun: typeof transitionRun;
+};
+
+async function defaultSweepDeps(): Promise<SweepDeps> {
+  const [enqueue, plaid] = await Promise.all([
+    import('../jobs/enqueue.js'),
+    import('./plaid.service.js'),
+  ]);
+
+  return {
+    db: pool,
+    enqueueAnalysis: (payload) => enqueue.enqueueUserAnalysis(payload),
+    ensureItemSyncs: (userId) => plaid.ensureItemSyncs(userId),
+    maybeStartAnalysis: (userId) => maybeStartUserAnalysis(userId),
+    transitionRun,
+  };
+}
+
+type StaleRunRow = { id: string; user_id: string };
+
+/**
+ * SWEEP_STALE_RUNS: the safety net under every other recovery mechanism.
+ *
+ * pg-boss's own expiration covers jobs whose worker died mid-run; the dead
+ * letter covers jobs that exhausted retries. What neither covers is a run
+ * with NO live job at all — an enqueue that never happened (crash between
+ * stages, dropped singleton). Nothing would ever touch such a run again,
+ * and the status surface reads "working" forever.
+ *
+ * Three escalating responses, all idempotent:
+ *  - in-flight (processing/recomputing) and quiet past STALL_FAIL_MINUTES:
+ *    fail retryably so the user gets a retry action instead of a spinner;
+ *  - in-flight and quiet past STALL_REKICK_MINUTES: re-enqueue the pipeline
+ *    (stages are idempotent upserts and the enqueue is debounced per user);
+ *  - waiting_for_history and quiet past WAITING_SWEEP_MINUTES: re-kick dead
+ *    sync chains and re-evaluate the start gate.
+ */
+export async function sweepStaleRuns(
+  depsOverride?: Partial<SweepDeps>,
+): Promise<{ failed: number; rekicked: number; waitingKicked: number }> {
+  const deps: SweepDeps = { ...(await defaultSweepDeps()), ...depsOverride };
+
+  let failed = 0;
+
+  const { rows: hopeless } = await deps.db.query<StaleRunRow>(
+    `SELECT id, user_id FROM financial_analysis_runs
+     WHERE status IN ('processing', 'recomputing')
+       AND updated_at < NOW() - make_interval(mins => $1)`,
+    [STALL_FAIL_MINUTES],
+  );
+
+  for (const run of hopeless) {
+    try {
+      await deps.transitionRun(run.id, 'failed', {
+        errorCode: 'ANALYSIS_STALLED',
+        errorMessage: 'The analysis stalled and was marked failed; retry to run it again.',
+      });
+      failed += 1;
+    } catch (err) {
+      // A state-machine rejection means someone else moved the run first —
+      // exactly the kind of race the sweep should lose quietly.
+      if (!(err instanceof OnboardingError)) {
+        throw err;
+      }
+    }
+  }
+
+  // Runs failed above are no longer in an in-flight status, so this
+  // shorter-window query never double-touches them.
+  const { rows: quiet } = await deps.db.query<StaleRunRow>(
+    `SELECT id, user_id FROM financial_analysis_runs
+     WHERE status IN ('processing', 'recomputing')
+       AND updated_at < NOW() - make_interval(mins => $1)`,
+    [STALL_REKICK_MINUTES],
+  );
+
+  for (const run of quiet) {
+    await deps.enqueueAnalysis({ userId: run.user_id, analysisRunId: run.id });
+  }
+
+  const { rows: waiting } = await deps.db.query<StaleRunRow>(
+    `SELECT id, user_id FROM financial_analysis_runs
+     WHERE status = 'waiting_for_history'
+       AND updated_at < NOW() - make_interval(mins => $1)`,
+    [WAITING_SWEEP_MINUTES],
+  );
+
+  for (const run of waiting) {
+    await deps.ensureItemSyncs(run.user_id);
+    await deps.maybeStartAnalysis(run.user_id);
+  }
+
+  if (failed > 0 || quiet.length > 0 || waiting.length > 0) {
+    logger.info('stale-run sweep', {
+      failed,
+      rekicked: quiet.length,
+      waitingKicked: waiting.length,
+    });
+  }
+
+  return { failed, rekicked: quiet.length, waitingKicked: waiting.length };
 }

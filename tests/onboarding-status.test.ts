@@ -128,16 +128,21 @@ describe('getOnboardingStatus', () => {
     expect(status.availableActions).toContain('link_institution');
   });
 
-  test('failed run exposes retry', async () => {
+  test('failed run exposes retry and the failure code', async () => {
     const status = await getOnboardingStatus(
       'user-1',
-      statusDeps(lifecycle({ latestRun: run({ status: 'failed' }) }), [
-        item({ syncStatus: 'failed', usable: false }),
-      ]),
+      statusDeps(
+        lifecycle({
+          latestRun: run({ status: 'failed', errorCode: 'NO_USABLE_ITEM' }),
+        }),
+        [item({ syncStatus: 'failed', usable: false })],
+      ),
     );
 
     expect(status.phase).toBe('failed_retryable');
     expect(status.analysis?.retryAllowed).toBe(true);
+    // The client needs the code to say anything more useful than "failed".
+    expect(status.analysis?.errorCode).toBe('NO_USABLE_ITEM');
     expect(status.availableActions).toContain('retry_analysis');
   });
 

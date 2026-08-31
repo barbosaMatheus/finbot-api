@@ -6,6 +6,7 @@ import { runMigrations } from './db/migrate.js';
 import { closePool } from './db.js';
 import { getBoss, stopBoss } from './jobs/boss.js';
 import { registerJobHandlers, registeredJobNames } from './jobs/register.js';
+import { JOB } from './jobs/types.js';
 // Handler modules self-register via setJobHandler at import time. Later
 // tickets add their imports here.
 import './jobs/handlers/index.js';
@@ -23,6 +24,10 @@ async function main(): Promise<void> {
 
   const boss = await getBoss();
   await registerJobHandlers(boss);
+
+  // Watchdog: stale in-flight runs get re-kicked or failed retryably
+  // instead of spinning forever (see sweepStaleRuns).
+  await boss.schedule(JOB.SWEEP_STALE_RUNS, '*/10 * * * *');
 
   logger.info('worker started', {
     handlers: registeredJobNames().join(','),

@@ -152,6 +152,7 @@ export const onboardingStatusResponseSchema = z.object({
       startedAt: z.string(),
       reviewReadyAt: z.string().nullable(),
       retryAllowed: z.boolean(),
+      errorCode: z.string().nullable(),
     })
     .nullable(),
   availableActions: z.array(z.string()),
@@ -340,6 +341,7 @@ export const statusExample = {
     startedAt: '2026-08-24T20:00:00Z',
     reviewReadyAt: null,
     retryAllowed: false,
+    errorCode: null,
   },
   availableActions: ['view_waiting', 'manage_connections', 'manage_notifications', 'logout'],
   onboardingComplete: false,

@@ -20,6 +20,7 @@ const mockClient = {
   linkTokenCreate: jest.fn<AsyncMock>(),
   linkTokenGet: jest.fn<AsyncMock>(),
   itemRemove: jest.fn<AsyncMock>(),
+  itemWebhookUpdate: jest.fn<AsyncMock>(),
 };
 
 jest.mock('../src/lib/plaid', () => ({
@@ -29,6 +30,8 @@ jest.mock('../src/lib/plaid', () => ({
   getPlaidRedirectUri: () => undefined,
   getPlaidAndroidPackageName: () => undefined,
   getHostedLinkRedirectUri: () => undefined,
+  getPlaidWebhookUrl: () => process.env.PLAID_WEBHOOK_URL?.trim() || undefined,
+  getRequestedHistoryDays: () => 180,
   PLAID_CLIENT_NAME: 'FinBot',
 }));
 
@@ -46,8 +49,12 @@ jest.mock('../src/db', () => ({
   },
 }));
 
-import { decryptSecret } from '../src/lib/crypto.js';
-import { exchangePublicToken } from '../src/services/plaid.service.js';
+import { decryptSecret, encryptSecret } from '../src/lib/crypto.js';
+import {
+  createLinkToken,
+  exchangePublicToken,
+  syncItemWebhooks,
+} from '../src/services/plaid.service.js';
 
 const itemRow = {
   id: 'item-row-1',
@@ -166,6 +173,82 @@ describe('exchangePublicToken', () => {
     expect(statements[0]).toBe('BEGIN');
     expect(statements).toContain('COMMIT');
     expect(dbClient.release).toHaveBeenCalled();
+  });
+});
+
+describe('webhook URL registration', () => {
+  afterEach(() => {
+    delete process.env.PLAID_WEBHOOK_URL;
+  });
+
+  test('createLinkToken registers the webhook receiver with Plaid', async () => {
+    process.env.PLAID_WEBHOOK_URL = 'https://api.example.com/plaid/webhook';
+    mockClient.linkTokenCreate.mockResolvedValue({
+      data: { link_token: 'link-1', expiration: null, hosted_link_url: null },
+    });
+
+    await createLinkToken('user-1');
+
+    expect(mockClient.linkTokenCreate).toHaveBeenCalledWith(
+      expect.objectContaining({ webhook: 'https://api.example.com/plaid/webhook' }),
+    );
+  });
+
+  test('createLinkToken omits the webhook field when the URL is unset', async () => {
+    mockClient.linkTokenCreate.mockResolvedValue({
+      data: { link_token: 'link-1', expiration: null, hosted_link_url: null },
+    });
+
+    await createLinkToken('user-1');
+
+    expect(mockClient.linkTokenCreate.mock.calls[0]?.[0]).not.toHaveProperty('webhook');
+  });
+
+  test('syncItemWebhooks points existing active Items at the receiver', async () => {
+    process.env.PLAID_WEBHOOK_URL = 'https://api.example.com/plaid/webhook';
+
+    const { pool } = jest.requireMock('../src/db') as { pool: { query: jest.Mock } };
+    pool.query.mockResolvedValueOnce({
+      rows: [
+        { id: 'item-row-1', access_token_encrypted: encryptSecret('access-1') },
+        { id: 'item-row-2', access_token_encrypted: encryptSecret('access-2') },
+      ],
+      rowCount: 2,
+    });
+
+    await syncItemWebhooks();
+
+    expect(mockClient.itemWebhookUpdate).toHaveBeenCalledTimes(2);
+    expect(mockClient.itemWebhookUpdate).toHaveBeenCalledWith({
+      access_token: 'access-1',
+      webhook: 'https://api.example.com/plaid/webhook',
+    });
+  });
+
+  test('syncItemWebhooks is a no-op without a configured URL', async () => {
+    await syncItemWebhooks();
+
+    expect(mockClient.itemWebhookUpdate).not.toHaveBeenCalled();
+  });
+
+  test('one Item failing to update does not stop the rest', async () => {
+    process.env.PLAID_WEBHOOK_URL = 'https://api.example.com/plaid/webhook';
+
+    const { pool } = jest.requireMock('../src/db') as { pool: { query: jest.Mock } };
+    pool.query.mockResolvedValueOnce({
+      rows: [
+        { id: 'item-row-1', access_token_encrypted: encryptSecret('access-1') },
+        { id: 'item-row-2', access_token_encrypted: encryptSecret('access-2') },
+      ],
+      rowCount: 2,
+    });
+    mockClient.itemWebhookUpdate
+      .mockRejectedValueOnce(new Error('ITEM_LOGIN_REQUIRED'))
+      .mockResolvedValueOnce({ data: {} });
+
+    await syncItemWebhooks();
+
+    expect(mockClient.itemWebhookUpdate).toHaveBeenCalledTimes(2);
   });
 });
 

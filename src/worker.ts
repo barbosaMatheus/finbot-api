@@ -28,6 +28,16 @@ async function main(): Promise<void> {
     handlers: registeredJobNames().join(','),
   });
 
+  // Point Items linked before PLAID_WEBHOOK_URL was configured at the
+  // webhook receiver. Best-effort: the worker must start regardless.
+  const { syncItemWebhooks } = await import('./services/plaid.service.js');
+
+  syncItemWebhooks().catch((err) => {
+    logger.error('item webhook sync failed', {
+      error: err instanceof Error ? err : String(err),
+    });
+  });
+
   let shuttingDown = false;
 
   const shutdown = async (signal: string): Promise<void> => {

@@ -125,6 +125,16 @@ export function getHostedLinkRedirectUri(): string | undefined {
   return corsOrigin && corsOrigin.length > 0 ? corsOrigin : undefined;
 }
 
+/**
+ * Public URL Plaid delivers webhooks to (`POST /plaid/webhook`). Without it
+ * Plaid sends no SYNC_UPDATES_AVAILABLE or ITEM events, so transactions stop
+ * updating after the initial import. Optional only for local sandbox work.
+ */
+export function getPlaidWebhookUrl(): string | undefined {
+  const value = process.env.PLAID_WEBHOOK_URL?.trim();
+  return value && value.length > 0 ? value : undefined;
+}
+
 /** Shown to the user inside Link. Plaid caps this at 30 characters. */
 export const PLAID_CLIENT_NAME = 'FinBot';
 

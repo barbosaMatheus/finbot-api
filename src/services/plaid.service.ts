@@ -10,6 +10,7 @@ import {
   getPlaidCountryCodes,
   getPlaidProducts,
   getPlaidRedirectUri,
+  getPlaidWebhookUrl,
   getRequestedHistoryDays,
 } from '../lib/plaid.js';
 import { enqueueInitializeItemSync } from '../jobs/enqueue.js';
@@ -143,6 +144,7 @@ export async function createLinkToken(
   const redirectUri = getPlaidRedirectUri();
   const androidPackageName = getPlaidAndroidPackageName();
   const completionRedirectUri = getHostedLinkRedirectUri();
+  const webhookUrl = getPlaidWebhookUrl();
 
   // Update mode: re-authenticate or change account selection on an
   // existing Item. Requires the stored access token and takes no products.
@@ -183,6 +185,9 @@ export async function createLinkToken(
             // return what they have.
             transactions: { days_requested: getRequestedHistoryDays() },
           }),
+      // Registered per-Item at creation; without it Plaid never calls
+      // POST /plaid/webhook and data freezes after the initial import.
+      ...(webhookUrl ? { webhook: webhookUrl } : {}),
       ...(redirectUri ? { redirect_uri: redirectUri } : {}),
       ...(androidPackageName ? { android_package_name: androidPackageName } : {}),
       hosted_link: completionRedirectUri
@@ -343,6 +348,50 @@ export async function startItemSync(
       itemId: plaidItemRowId,
       error: err instanceof Error ? err : String(err),
     });
+  }
+}
+
+/**
+ * Point every active Item at the configured webhook receiver. New Items get
+ * the URL at link-token creation; this covers Items linked before
+ * PLAID_WEBHOOK_URL was set (or after it changed). One Plaid call per active
+ * Item, run at worker boot — cheap at current scale, and a per-Item failure
+ * never blocks the others or startup.
+ */
+export async function syncItemWebhooks(): Promise<void> {
+  const webhookUrl = getPlaidWebhookUrl();
+
+  if (!webhookUrl) {
+    logger.warn(
+      'PLAID_WEBHOOK_URL is not set; Plaid will deliver no webhooks and transactions will not update after the initial import',
+    );
+    return;
+  }
+
+  const { rows } = await pool.query<{ id: string; access_token_encrypted: string }>(
+    `SELECT id, access_token_encrypted FROM plaid_items WHERE status = 'active'`,
+  );
+
+  const client = getPlaidClient();
+  let updated = 0;
+
+  for (const row of rows) {
+    try {
+      await client.itemWebhookUpdate({
+        access_token: decryptSecret(row.access_token_encrypted),
+        webhook: webhookUrl,
+      });
+      updated += 1;
+    } catch (err) {
+      logger.warn('could not update item webhook URL', {
+        itemId: row.id,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
+  if (rows.length > 0) {
+    logger.info('item webhook URLs synced', { total: rows.length, updated });
   }
 }
 

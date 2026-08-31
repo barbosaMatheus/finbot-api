@@ -174,8 +174,14 @@ export async function maybeStartUserAnalysis(
     return 'failed';
   }
 
-  await deps.transitionRun(run.id, 'processing');
+  // Enqueue before flipping status: the reverse order could crash between
+  // the two awaits and strand the run in 'processing' with nothing queued —
+  // an unrecoverable spinner (retry reports already_running, this function
+  // reports skipped). With enqueue-first, a crash leaves the run in
+  // waiting_for_history and the classify handler promotes it on execution
+  // (ensureRunInFlight).
   await deps.enqueueAnalysis({ userId, analysisRunId: run.id });
+  await deps.transitionRun(run.id, 'processing');
 
   logger.info('analysis run started', {
     userId,

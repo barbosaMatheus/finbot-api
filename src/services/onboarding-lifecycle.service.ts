@@ -427,6 +427,31 @@ export async function ensureActiveRun(
 }
 
 /**
+ * Promote a run entering the analysis pipeline to 'processing' if it is not
+ * already in flight. The enqueue → transition pair in maybeStartUserAnalysis
+ * is not atomic; the first pipeline stage calls this so a crash between the
+ * two can never leave a queued pipeline running against a run the status
+ * surface still reports as waiting. Runs already processing or recomputing
+ * are left untouched; a run marked failed by a dead-lettered earlier attempt
+ * is revived, since the pipeline is demonstrably running again.
+ */
+export async function ensureRunInFlight(
+  runId: string,
+  db: Queryable = pool,
+): Promise<void> {
+  const { rows } = await db.query<{ status: AnalysisRunStatus }>(
+    `SELECT status FROM financial_analysis_runs WHERE id = $1`,
+    [runId],
+  );
+
+  const status = rows[0]?.status;
+
+  if (status === 'waiting_for_history' || status === 'failed') {
+    await transitionRun(runId, 'processing', { db });
+  }
+}
+
+/**
  * Move a run to a new status, enforcing the transition table, and stamp the
  * matching timestamp columns. Idempotent: moving to the status the run is
  * already in is a no-op so at-least-once jobs can replay safely.

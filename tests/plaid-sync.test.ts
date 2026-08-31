@@ -568,6 +568,23 @@ describe('maybeStartUserAnalysis', () => {
     expect(transitions).toEqual([]);
   });
 
+  test('a failed enqueue never strands the run in processing', async () => {
+    // Regression: transition-then-enqueue could crash between the two and
+    // leave a 'processing' run with nothing queued — an unrecoverable
+    // spinner. Enqueue goes first; on failure the status is untouched.
+    const { deps, transitions } = orchestrationDeps({
+      declared: true,
+      items: [{ sync_status: 'complete' }],
+    });
+
+    deps.enqueueAnalysis = async () => {
+      throw new Error('queue down');
+    };
+
+    await expect(maybeStartUserAnalysis('user-1', deps)).rejects.toThrow('queue down');
+    expect(transitions).toEqual([]);
+  });
+
   test('never spawns a new run for a user whose latest run is confirmed', async () => {
     // Post-completion webhook syncs land here; the ensureActiveRun stub
     // throws, so reaching 'skipped' proves no run was created.

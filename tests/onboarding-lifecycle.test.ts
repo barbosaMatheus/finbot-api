@@ -6,6 +6,7 @@ import {
   deriveAvailableActions,
   deriveGates,
   derivePhase,
+  ensureRunInFlight,
   isOnboardingComplete,
 } from '../src/services/onboarding-lifecycle.service.js';
 import type {
@@ -227,4 +228,55 @@ describe('run status transitions', () => {
       expect(canTransitionRun('superseded', to)).toBe(false);
     }
   });
+});
+
+describe('ensureRunInFlight', () => {
+  function fakeDb(status: string) {
+    const updates: string[] = [];
+
+    const db = {
+      async query<R>(text: string): Promise<{ rows: R[]; rowCount: number | null }> {
+        if (text.includes('SELECT status FROM financial_analysis_runs')) {
+          return { rows: [{ status } as R], rowCount: 1 };
+        }
+
+        if (text.includes('UPDATE financial_analysis_runs')) {
+          updates.push(text);
+          return { rows: [] as R[], rowCount: 1 };
+        }
+
+        throw new Error(`unexpected query: ${text.slice(0, 60)}`);
+      },
+    };
+
+    return { db, updates };
+  }
+
+  test('promotes a waiting_for_history run to processing', async () => {
+    const { db, updates } = fakeDb('waiting_for_history');
+
+    await ensureRunInFlight('run-1', db);
+
+    expect(updates).toHaveLength(1);
+    expect(updates[0]).toContain('SET status = $2');
+  });
+
+  test('revives a run marked failed by a dead-lettered earlier attempt', async () => {
+    const { db, updates } = fakeDb('failed');
+
+    await ensureRunInFlight('run-1', db);
+
+    expect(updates).toHaveLength(1);
+  });
+
+  test.each(['processing', 'recomputing', 'review_ready', 'confirmed'])(
+    'leaves a %s run untouched',
+    async (status) => {
+      const { db, updates } = fakeDb(status);
+
+      await ensureRunInFlight('run-1', db);
+
+      expect(updates).toHaveLength(0);
+    },
+  );
 });

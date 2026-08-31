@@ -11,10 +11,15 @@ import { detectUserRecurring } from '../../services/recurrence.service.js';
 import { buildFinancialFacts } from '../../services/financial-facts.service.js';
 import { buildFinancialReview } from '../../services/review.service.js';
 import { sendReviewReadyNotification } from '../../services/push.service.js';
+import { ensureRunInFlight } from '../../services/onboarding-lifecycle.service.js';
 import { setJobHandler } from '../register.js';
 import { JOB } from '../types.js';
 
 setJobHandler(JOB.CLASSIFY_USER_TRANSACTIONS, async (payload) => {
+  // The pipeline owns the 'processing' promotion (idempotent; recomputing
+  // runs pass through untouched) so a crash between enqueue and transition
+  // in maybeStartUserAnalysis self-heals when the job executes.
+  await ensureRunInFlight(payload.analysisRunId);
   await classifyUserTransactions(payload);
 });
 

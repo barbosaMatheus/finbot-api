@@ -619,4 +619,58 @@ describeIf('end-to-end financial onboarding pipeline (real Postgres)', () => {
     const again = await confirmFinancialReview(userId, review.snapshotVersion);
     expect(again.alreadyConfirmed).toBe(true);
   }, 120_000);
+
+  test('concurrent transitions cannot compose a forbidden move (CAS)', async () => {
+    // The race the old FOR-UPDATE-on-a-pool code lost: a dead-letter
+    // 'failed' running concurrently with a user confirm could overwrite
+    // 'confirmed'. Under the CAS exactly one side wins and the loser
+    // throws; the winner's status is never clobbered.
+    const uid = randomUUID();
+
+    await pool.query(
+      `INSERT INTO users (id, email, password_hash) VALUES ($1, $2, 'x')`,
+      [uid, `e2e-cas-${uid}@test.local`],
+    );
+
+    try {
+      for (let round = 0; round < 5; round += 1) {
+        const { rows } = await pool.query<{ id: string }>(
+          `INSERT INTO financial_analysis_runs (user_id, requested_lookback_days)
+           VALUES ($1, 180)
+           RETURNING id`,
+          [uid],
+        );
+        const runId = rows[0]!.id;
+
+        await transitionRun(runId, 'processing');
+        await transitionRun(runId, 'review_ready');
+
+        const results = await Promise.allSettled([
+          transitionRun(runId, 'confirmed'),
+          transitionRun(runId, 'failed', { errorCode: 'ANALYSIS_JOB_FAILED' }),
+        ]);
+
+        const fulfilled = results.filter((r) => r.status === 'fulfilled');
+        expect(fulfilled).toHaveLength(1);
+
+        const { rows: finalRows } = await pool.query<{ status: string }>(
+          `SELECT status FROM financial_analysis_runs WHERE id = $1`,
+          [runId],
+        );
+
+        // The stored status is exactly the winner's move — never a
+        // second transition layered on top of it.
+        const winnerIndex = results[0]!.status === 'fulfilled' ? 0 : 1;
+        expect(finalRows[0]!.status).toBe(winnerIndex === 0 ? 'confirmed' : 'failed');
+
+        // Free the single active-run slot for the next round.
+        await pool.query(
+          `UPDATE financial_analysis_runs SET status = 'superseded' WHERE id = $1`,
+          [runId],
+        );
+      }
+    } finally {
+      await pool.query(`DELETE FROM users WHERE id = $1`, [uid]);
+    }
+  }, 60_000);
 });

@@ -455,6 +455,12 @@ export async function ensureRunInFlight(
  * Move a run to a new status, enforcing the transition table, and stamp the
  * matching timestamp columns. Idempotent: moving to the status the run is
  * already in is a no-op so at-least-once jobs can replay safely.
+ *
+ * Concurrency-safe by compare-and-swap: the UPDATE only applies while the
+ * run is still in the status we validated against, so two racing
+ * transitions can never compose into a move the transition table forbids
+ * (e.g. a dead-letter 'failed' landing on top of a concurrent 'confirmed').
+ * The loser either converges (the run already reached `to`) or gets a 409.
  */
 export async function transitionRun(
   runId: string,
@@ -468,7 +474,7 @@ export async function transitionRun(
   const db = options.db ?? pool;
 
   const { rows } = await db.query<{ status: AnalysisRunStatus }>(
-    `SELECT status FROM financial_analysis_runs WHERE id = $1 FOR UPDATE`,
+    `SELECT status FROM financial_analysis_runs WHERE id = $1`,
     [runId],
   );
 
@@ -484,7 +490,7 @@ export async function transitionRun(
 
   assertRunTransition(current.status, to);
 
-  await db.query(
+  const result = await db.query(
     `UPDATE financial_analysis_runs
      SET status = $2,
          error_code = $3,
@@ -500,13 +506,33 @@ export async function transitionRun(
            ELSE retry_count
          END,
          updated_at = NOW()
-     WHERE id = $1`,
+     WHERE id = $1 AND status = $6`,
     [
       runId,
       to,
       options.errorCode ?? null,
       options.errorMessage ?? null,
       current.status === 'failed' && (to === 'waiting_for_history' || to === 'processing'),
+      current.status,
     ],
   );
+
+  if ((result.rowCount ?? 0) === 0) {
+    // Lost the race: someone moved the run between our read and write.
+    const { rows: rereadRows } = await db.query<{ status: AnalysisRunStatus }>(
+      `SELECT status FROM financial_analysis_runs WHERE id = $1`,
+      [runId],
+    );
+
+    if (rereadRows[0]?.status === to) {
+      // The winner made the same move — idempotent success.
+      return;
+    }
+
+    throw new OnboardingError(
+      `Analysis run was updated concurrently (now ${rereadRows[0]?.status ?? 'missing'})`,
+      409,
+      'RUN_TRANSITION_CONFLICT',
+    );
+  }
 }

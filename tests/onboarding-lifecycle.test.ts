@@ -8,6 +8,7 @@ import {
   derivePhase,
   ensureRunInFlight,
   isOnboardingComplete,
+  transitionRun,
 } from '../src/services/onboarding-lifecycle.service.js';
 import type {
   AnalysisRunStatus,
@@ -279,4 +280,70 @@ describe('ensureRunInFlight', () => {
       expect(updates).toHaveLength(0);
     },
   );
+});
+
+describe('transitionRun compare-and-swap', () => {
+  function casDb(options: { reads: string[]; updateRowCount: number }) {
+    const reads = [...options.reads];
+    const updates: Array<{ text: string; values: unknown[] }> = [];
+
+    const db = {
+      async query<R>(
+        text: string,
+        values: unknown[] = [],
+      ): Promise<{ rows: R[]; rowCount: number | null }> {
+        if (text.includes('SELECT status FROM financial_analysis_runs')) {
+          const status = reads.shift();
+          return {
+            rows: status ? [{ status } as R] : [],
+            rowCount: status ? 1 : 0,
+          };
+        }
+
+        if (text.includes('UPDATE financial_analysis_runs')) {
+          updates.push({ text, values });
+          return { rows: [] as R[], rowCount: options.updateRowCount };
+        }
+
+        throw new Error(`unexpected query: ${text.slice(0, 60)}`);
+      },
+    };
+
+    return { db, updates };
+  }
+
+  test('the UPDATE is guarded by the observed status', async () => {
+    const { db, updates } = casDb({ reads: ['processing'], updateRowCount: 1 });
+
+    await transitionRun('run-1', 'review_ready', { db });
+
+    expect(updates).toHaveLength(1);
+    expect(updates[0]!.text).toContain('AND status = $6');
+    expect(updates[0]!.values[5]).toBe('processing');
+  });
+
+  test('losing a race to the same target converges quietly', async () => {
+    const { db } = casDb({
+      reads: ['processing', 'review_ready'],
+      updateRowCount: 0,
+    });
+
+    await expect(
+      transitionRun('run-1', 'review_ready', { db }),
+    ).resolves.toBeUndefined();
+  });
+
+  test('losing a race to a different target raises a conflict', async () => {
+    // The scenario the old FOR UPDATE-on-a-pool code allowed: a dead-letter
+    // 'failed' racing a user confirm and overwriting 'confirmed'. The CAS
+    // makes the loser fail loudly instead of composing a forbidden move.
+    const { db } = casDb({
+      reads: ['review_ready', 'confirmed'],
+      updateRowCount: 0,
+    });
+
+    await expect(transitionRun('run-1', 'failed', { db })).rejects.toMatchObject({
+      code: 'RUN_TRANSITION_CONFLICT',
+    });
+  });
 });

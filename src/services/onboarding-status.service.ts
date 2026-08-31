@@ -8,7 +8,7 @@
  * idempotent; retry is explicit and bounded.
  */
 
-import { pool } from '../db.js';
+import { pool, withTransaction } from '../db.js';
 import type { Queryable } from '../lib/db-types.js';
 import { logger } from '../lib/logger.js';
 import {
@@ -163,6 +163,11 @@ export async function declareLinkingComplete(userId: string): Promise<void> {
 
 export type ConfirmDeps = {
   db: Queryable;
+  /**
+   * Transaction seam. Production wraps the whole confirm in one
+   * BEGIN/COMMIT; unit tests may omit it to run against their fake db.
+   */
+  withTransaction?<T>(fn: (tx: Queryable) => Promise<T>): Promise<T>;
 };
 
 export async function confirmFinancialReview(
@@ -170,82 +175,92 @@ export async function confirmFinancialReview(
   snapshotVersion: number,
   depsOverride?: ConfirmDeps,
 ): Promise<{ onboardingComplete: boolean; alreadyConfirmed: boolean }> {
-  const deps = depsOverride ?? { db: pool };
+  const deps = depsOverride ?? { db: pool, withTransaction };
+  const runInTransaction =
+    deps.withTransaction ?? (async <T,>(fn: (tx: Queryable) => Promise<T>) => fn(deps.db));
 
-  const run = await getLatestRun(userId, deps.db);
+  // Everything from the status read to the derived-flag write lands (or
+  // fails) atomically: a crash mid-confirm can no longer leave the run
+  // 'confirmed' while users.on_boarding_complete stays false.
+  return runInTransaction(async (tx) => {
+    const run = await getLatestRun(userId, tx);
 
-  if (!run) {
-    throw new OnboardingError(
-      'Financial analysis is not reviewable yet',
-      409,
-      'ANALYSIS_NOT_REVIEWABLE',
+    if (!run) {
+      throw new OnboardingError(
+        'Financial analysis is not reviewable yet',
+        409,
+        'ANALYSIS_NOT_REVIEWABLE',
+      );
+    }
+
+    const { rows: versionRows } = await tx.query<{ version: number | null }>(
+      `SELECT MAX(version)::int AS version
+       FROM financial_fact_snapshots
+       WHERE analysis_run_id = $1`,
+      [run.id],
     );
-  }
 
-  const { rows: versionRows } = await deps.db.query<{ version: number | null }>(
-    `SELECT MAX(version)::int AS version
-     FROM financial_fact_snapshots
-     WHERE analysis_run_id = $1`,
-    [run.id],
-  );
+    const latestVersion = versionRows[0]?.version ?? 0;
 
-  const latestVersion = versionRows[0]?.version ?? 0;
+    if (run.status === 'confirmed') {
+      // Idempotent — and the repair path: an earlier crash between the
+      // transition and the flag write is healed by recomputing here
+      // instead of assuming the flag landed.
+      const onboardingComplete = await recomputeOnboardingComplete(tx, userId);
+      return { onboardingComplete, alreadyConfirmed: true };
+    }
 
-  if (run.status === 'confirmed') {
-    // Idempotent: confirming what is already confirmed succeeds quietly.
-    return { onboardingComplete: true, alreadyConfirmed: true };
-  }
+    if (run.status !== 'review_ready') {
+      throw new OnboardingError(
+        'Financial analysis is not reviewable yet',
+        409,
+        'ANALYSIS_NOT_REVIEWABLE',
+      );
+    }
 
-  if (run.status !== 'review_ready') {
-    throw new OnboardingError(
-      'Financial analysis is not reviewable yet',
-      409,
-      'ANALYSIS_NOT_REVIEWABLE',
+    if (latestVersion !== snapshotVersion) {
+      throw new OnboardingError(
+        'The review changed since you loaded it; refresh to continue',
+        409,
+        'REVIEW_VERSION_STALE',
+      );
+    }
+
+    const { rows: unresolvedRows } = await tx.query<{ count: string }>(
+      `SELECT COUNT(*)::text AS count
+       FROM financial_review_items
+       WHERE analysis_run_id = $1 AND required = TRUE AND status = 'open'`,
+      [run.id],
     );
-  }
 
-  if (latestVersion !== snapshotVersion) {
-    throw new OnboardingError(
-      'The review changed since you loaded it; refresh to continue',
-      409,
-      'REVIEW_VERSION_STALE',
+    if (Number(unresolvedRows[0]?.count ?? '0') > 0) {
+      throw new OnboardingError(
+        'Required review items are still unresolved',
+        409,
+        'REVIEW_ITEMS_UNRESOLVED',
+      );
+    }
+
+    await transitionRun(run.id, 'confirmed', { db: tx });
+
+    await tx.query(
+      `UPDATE financial_analysis_runs
+       SET confirmed_snapshot_version = $2, updated_at = NOW()
+       WHERE id = $1`,
+      [run.id, snapshotVersion],
     );
-  }
 
-  const { rows: unresolvedRows } = await deps.db.query<{ count: string }>(
-    `SELECT COUNT(*)::text AS count
-     FROM financial_review_items
-     WHERE analysis_run_id = $1 AND required = TRUE AND status = 'open'`,
-    [run.id],
-  );
+    const onboardingComplete = await recomputeOnboardingComplete(tx, userId);
 
-  if (Number(unresolvedRows[0]?.count ?? '0') > 0) {
-    throw new OnboardingError(
-      'Required review items are still unresolved',
-      409,
-      'REVIEW_ITEMS_UNRESOLVED',
-    );
-  }
+    logger.info('financial review confirmed', {
+      userId,
+      analysisRunId: run.id,
+      snapshotVersion,
+      onboardingComplete,
+    });
 
-  await transitionRun(run.id, 'confirmed', { db: deps.db });
-
-  await deps.db.query(
-    `UPDATE financial_analysis_runs
-     SET confirmed_snapshot_version = $2, updated_at = NOW()
-     WHERE id = $1`,
-    [run.id, snapshotVersion],
-  );
-
-  const onboardingComplete = await recomputeOnboardingComplete(deps.db, userId);
-
-  logger.info('financial review confirmed', {
-    userId,
-    analysisRunId: run.id,
-    snapshotVersion,
-    onboardingComplete,
+    return { onboardingComplete, alreadyConfirmed: false };
   });
-
-  return { onboardingComplete, alreadyConfirmed: false };
 }
 
 // ---------------------------------------------------------------------------

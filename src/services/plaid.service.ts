@@ -101,7 +101,10 @@ function toPlaidError(err: unknown, fallback: string): PlaidError {
   const data = response?.data;
 
   if (data?.error_message) {
-    console.error(`[plaid] ${data.error_code ?? 'error'}: ${data.error_message}`);
+    logger.error('plaid request failed', {
+      errorCode: data.error_code ?? 'unknown',
+      errorMessage: data.error_message,
+    });
 
     // Plaid issues a separate secret per environment, and using the wrong one
     // gives no hint that the environment is the problem.
@@ -117,7 +120,12 @@ function toPlaidError(err: unknown, fallback: string): PlaidError {
     return new PlaidError(data.error_message, 502);
   }
 
-  console.error('[plaid]', err);
+  // Never log the raw error object: axios errors carry PLAID-SECRET in
+  // config.headers and plaintext access tokens in config.data.
+  logger.error('plaid request failed', {
+    fallback,
+    error: err instanceof Error ? `${err.name}: ${err.message}` : String(err),
+  });
 
   return new PlaidError(fallback, 502);
 }
@@ -387,7 +395,10 @@ async function resolveInstitutionName(
 
     return data.institution.name;
   } catch (err) {
-    console.error('[plaid] could not resolve institution name', err);
+    logger.warn('could not resolve institution name', {
+      institutionId,
+      error: err instanceof Error ? err.message : String(err),
+    });
     return null;
   }
 }

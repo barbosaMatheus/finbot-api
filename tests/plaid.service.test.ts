@@ -1,5 +1,14 @@
 import { randomBytes } from 'node:crypto';
-import { beforeAll, beforeEach, describe, expect, jest, test } from '@jest/globals';
+import { inspect } from 'node:util';
+import {
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  jest,
+  test,
+} from '@jest/globals';
 
 /** Loose signature so each mock can resolve whatever the SDK shape needs. */
 type AsyncMock = (...args: unknown[]) => Promise<unknown>;
@@ -157,6 +166,71 @@ describe('exchangePublicToken', () => {
     expect(statements[0]).toBe('BEGIN');
     expect(statements).toContain('COMMIT');
     expect(dbClient.release).toHaveBeenCalled();
+  });
+});
+
+describe('credential redaction in error logging', () => {
+  let consoleOutput: string[];
+  let spies: Array<jest.SpiedFunction<(...args: unknown[]) => void>>;
+
+  beforeEach(() => {
+    consoleOutput = [];
+    spies = (['error', 'warn', 'log'] as const).map((level) =>
+      jest.spyOn(console, level).mockImplementation((...args: unknown[]) => {
+        // Expand objects the way Node's console would, so a raw axios error
+        // passed to console.* is caught even though String(err) would hide it.
+        consoleOutput.push(args.map((arg) => inspect(arg, { depth: 10 })).join(' '));
+      }),
+    );
+  });
+
+  afterEach(() => {
+    spies.forEach((spy) => spy.mockRestore());
+  });
+
+  /** An axios-shaped network error carrying our credentials, as the SDK throws. */
+  const axiosNetworkError = () => {
+    const err = new Error('getaddrinfo ENOTFOUND production.plaid.com') as Error & {
+      config?: unknown;
+      isAxiosError?: boolean;
+    };
+    err.name = 'AxiosError';
+    err.isAxiosError = true;
+    err.config = {
+      headers: {
+        'PLAID-CLIENT-ID': 'leaked-client-id',
+        'PLAID-SECRET': 'leaked-plaid-secret',
+      },
+      data: JSON.stringify({ access_token: 'leaked-access-token' }),
+    };
+    return err;
+  };
+
+  test('network-level Plaid failures never log the axios config', async () => {
+    mockClient.itemPublicTokenExchange.mockRejectedValue(axiosNetworkError());
+
+    await expect(
+      exchangePublicToken('user-1', 'public-sandbox-1'),
+    ).rejects.toThrow('Could not complete the bank connection');
+
+    const output = consoleOutput.join('\n');
+    expect(output).not.toContain('leaked-plaid-secret');
+    expect(output).not.toContain('leaked-client-id');
+    expect(output).not.toContain('leaked-access-token');
+    // The failure itself is still observable.
+    expect(output).toContain('plaid request failed');
+  });
+
+  test('institution-name lookup failures never log the axios config', async () => {
+    mockClient.institutionsGetById.mockRejectedValue(axiosNetworkError());
+
+    await exchangePublicToken('user-1', 'public-sandbox-1');
+
+    const output = consoleOutput.join('\n');
+    expect(output).not.toContain('leaked-plaid-secret');
+    expect(output).not.toContain('leaked-client-id');
+    expect(output).not.toContain('leaked-access-token');
+    expect(output).toContain('could not resolve institution name');
   });
 });
 

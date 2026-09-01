@@ -119,6 +119,8 @@ export type AccountBalance = {
   type: string;
   currentBalance: number | null;
   availableBalance: number | null;
+  /** Optional so legacy callers compile; the facts engine filters on it. */
+  isoCurrencyCode?: string | null;
 };
 
 export type BalanceSummary = {

@@ -149,6 +149,15 @@ export function computeCoverage(input: CoverageInput): Coverage {
     });
   }
 
+  if (facts.currency.excludedTransactionCount > 0) {
+    reasons.push({
+      code: 'MIXED_CURRENCY',
+      message: `${facts.currency.excludedTransactionCount} transactions in ${facts.currency.excludedCurrencies.join(
+        ', ',
+      )} were excluded; every total is in ${facts.currency.primary ?? 'the primary currency'}.`,
+    });
+  }
+
   const hasDepository = items.length > 0; // refined below from facts data
   const hasCredit = facts.movement.linkedCardPaymentTotal > 0;
 
@@ -213,8 +222,12 @@ export function generateReviewItems(input: ReviewItemInput): GeneratedReviewItem
       evidence: {
         description: input.externalCardPaymentDescription ?? 'Card payment',
         totalObserved: facts.movement.externalCardPaymentTotal,
-        averageMonthlyAmount:
-          facts.cashObligations.components.externalCardPaymentsMonthly,
+        // Observed monthly average — NOT the obligations component, which
+        // is deliberately zero when a credit account is connected.
+        averageMonthlyAmount: round2(
+          facts.movement.externalCardPaymentTotal /
+            Math.max(facts.period.normalizationMonths, 1),
+        ),
       },
       proposedValue: null,
       allowedActions: ['connect_account', 'accept_coverage_limitation'],

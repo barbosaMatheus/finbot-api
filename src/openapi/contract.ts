@@ -196,6 +196,11 @@ export const financialFactsSchema = z.object({
     observedDays: z.number().int(),
     normalizationMonths: z.number(),
   }),
+  currency: z.object({
+    primary: z.string().nullable(),
+    excludedTransactionCount: z.number().int(),
+    excludedCurrencies: z.array(z.string()),
+  }),
   income: z.object({
     monthlyIncomeEstimate: z.number(),
     estimateSource: z.enum(['recurring_streams', 'observed_average', 'none']),
@@ -380,6 +385,11 @@ export const reviewExample = {
       throughDate: '2026-08-24',
       observedDays: 174,
       normalizationMonths: 5.72,
+    },
+    currency: {
+      primary: 'USD',
+      excludedTransactionCount: 0,
+      excludedCurrencies: [],
     },
     income: {
       monthlyIncomeEstimate: 5200,

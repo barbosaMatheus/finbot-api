@@ -169,6 +169,46 @@ describe('computeCoverage', () => {
   });
 });
 
+describe('computeCoverage — currency', () => {
+  const usd = (rowId: string, amount: number, isoCurrencyCode: string) => ({
+    rowId,
+    amount,
+    date: '2026-08-01',
+    pending: false,
+    accountId: null,
+    isoCurrencyCode,
+    role: 'expense' as const,
+    displayBucket: 'Shopping',
+    accountType: 'depository',
+    linked: false,
+  });
+
+  test('mixed currencies surface as a coverage reason', () => {
+    const facts = factsFrom({
+      transactions: [
+        usd('t1', 100, 'USD'),
+        usd('t2', 100, 'USD'),
+        usd('t3', 80, 'EUR'),
+      ],
+    });
+
+    const coverage = computeCoverage(coverageInput(facts, [item({})]));
+
+    expect(facts.currency.excludedTransactionCount).toBe(1);
+    expect(coverage.reasons.map((r) => r.code)).toContain('MIXED_CURRENCY');
+  });
+
+  test('a single-currency user has no currency reason', () => {
+    const facts = factsFrom({
+      transactions: [usd('t1', 100, 'USD'), usd('t2', 100, 'USD')],
+    });
+
+    const coverage = computeCoverage(coverageInput(facts, [item({})]));
+
+    expect(coverage.reasons.map((r) => r.code)).not.toContain('MIXED_CURRENCY');
+  });
+});
+
 describe('generateReviewItems', () => {
   test('external card payment produces a required item with connect/accept actions', () => {
     const facts = factsFrom({

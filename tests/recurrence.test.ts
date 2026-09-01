@@ -68,6 +68,30 @@ describe('detectRecurringStreams', () => {
     expect(streams[0]!.averageAmount).toBeCloseTo(2600, 0);
   });
 
+  test('a stream carries the dominant role of its members', () => {
+    // Facts uses this to keep non-income inflows (roommate Zelle) out of
+    // the income estimate.
+    const payroll = series(
+      { merchantKey: 'acme payroll', displayName: 'ACME', amount: -2600, role: 'earned_income' },
+      14,
+      6,
+    );
+    const zelle = series(
+      { merchantKey: 'zelle roommate', displayName: 'Zelle', amount: -900, role: 'unknown_inflow' },
+      30,
+      4,
+    );
+
+    const streams = detectRecurringStreams([...payroll, ...zelle]);
+
+    expect(
+      streams.find((s) => s.merchantKey === 'acme payroll')?.dominantRole,
+    ).toBe('earned_income');
+    expect(
+      streams.find((s) => s.merchantKey === 'zelle roommate')?.dominantRole,
+    ).toBe('unknown_inflow');
+  });
+
   test('monthly subscription is a high-confidence outflow stream', () => {
     const netflix = series({ merchantKey: 'netflix', amount: 15.49 }, 30, 6, [0, 1, -1, 0, 1, 0]);
 

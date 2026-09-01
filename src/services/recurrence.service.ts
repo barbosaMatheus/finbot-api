@@ -56,6 +56,8 @@ export type RecurringStream = {
   streamKey: string;
   direction: 'inflow' | 'outflow';
   merchantKey: string;
+  /** Most frequent economic role among the stream's member transactions. */
+  dominantRole: EconomicRole;
   displayName: string;
   cadence: Cadence;
   cadenceDays: number;
@@ -203,10 +205,24 @@ export function detectRecurringStreams(
       group[0]!.merchantKey ??
       'Unknown';
 
+    // The stream's dominant role — what most of its members were classified
+    // as. Downstream, only earned_income inflow streams may feed the income
+    // estimate; a stream of unknown_inflow deposits stays out of it.
+    const roleCounts = new Map<EconomicRole, number>();
+
+    for (const input of group) {
+      roleCounts.set(input.role, (roleCounts.get(input.role) ?? 0) + 1);
+    }
+
+    const dominantRole = [...roleCounts.entries()].sort(
+      (a, b) => b[1] - a[1] || a[0].localeCompare(b[0]),
+    )[0]![0];
+
     streams.push({
       streamKey,
       direction,
       merchantKey: group[0]!.merchantKey!,
+      dominantRole,
       displayName,
       cadence,
       cadenceDays: Math.round(medianGap * 100) / 100,
@@ -252,12 +268,28 @@ async function defaultListInputs(userId: string): Promise<RecurrenceInput[]> {
     pending: boolean;
     economic_role: EconomicRole;
   }>(
-    `SELECT t.id AS row_id, t.merchant_normalized, t.merchant_name, t.name,
+    `WITH primary_currency AS (
+       SELECT t.iso_currency_code AS code
+       FROM plaid_transactions t
+       JOIN plaid_items i ON i.id = t.plaid_item_id AND i.status = 'active'
+       WHERE t.user_id = $1 AND t.is_removed = FALSE
+         AND t.iso_currency_code IS NOT NULL
+       GROUP BY t.iso_currency_code
+       ORDER BY COUNT(*) DESC, t.iso_currency_code
+       LIMIT 1
+     )
+     SELECT t.id AS row_id, t.merchant_normalized, t.merchant_name, t.name,
             t.amount::text AS amount, t.date::text AS date, t.pending,
             c.economic_role
      FROM plaid_transactions t
      JOIN transaction_classifications c ON c.transaction_row_id = t.id
-     WHERE t.user_id = $1 AND t.is_removed = FALSE`,
+     -- Same active-item filter as the facts read, and only the primary
+     -- currency: a stream must never mix currencies or count postings the
+     -- facts engine cannot see.
+     JOIN plaid_items i ON i.id = t.plaid_item_id AND i.status = 'active'
+     WHERE t.user_id = $1 AND t.is_removed = FALSE
+       AND (t.iso_currency_code IS NULL
+            OR t.iso_currency_code = (SELECT code FROM primary_currency))`,
     [userId],
   );
 
@@ -306,10 +338,10 @@ export async function detectUserRecurring(
          user_id, stream_key, direction, merchant_key, display_name, cadence,
          cadence_days, occurrences, average_amount, last_amount,
          amount_variance, first_date, last_date, confidence,
-         transaction_row_ids, evidence, rule_version
+         transaction_row_ids, evidence, rule_version, dominant_role
        )
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::date,
-               $13::date, $14, $15::uuid[], $16::jsonb, $17)
+               $13::date, $14, $15::uuid[], $16::jsonb, $17, $18)
        ON CONFLICT (user_id, stream_key) DO UPDATE SET
          display_name = EXCLUDED.display_name,
          cadence = EXCLUDED.cadence,
@@ -324,6 +356,7 @@ export async function detectUserRecurring(
          transaction_row_ids = EXCLUDED.transaction_row_ids,
          evidence = EXCLUDED.evidence,
          rule_version = EXCLUDED.rule_version,
+         dominant_role = EXCLUDED.dominant_role,
          updated_at = NOW()`,
       [
         payload.userId,
@@ -343,6 +376,7 @@ export async function detectUserRecurring(
         stream.transactionRowIds,
         JSON.stringify(stream.evidence),
         RECURRENCE_RULE_VERSION,
+        stream.dominantRole,
       ],
     );
   }

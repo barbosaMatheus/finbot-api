@@ -47,6 +47,16 @@ export type FinancialFacts = {
     /** Months used for monthly normalization (observedDays / 30.44, floored at ~1). */
     normalizationMonths: number;
   };
+  /**
+   * Facts are computed in one currency; transactions and accounts in any
+   * other currency are excluded and reported here, never silently summed
+   * as if units agreed.
+   */
+  currency: {
+    primary: string | null;
+    excludedTransactionCount: number;
+    excludedCurrencies: string[];
+  };
   income: {
     /** Best monthly estimate: recurring streams when available, else observed. */
     monthlyIncomeEstimate: number;
@@ -101,6 +111,9 @@ export type FactsTransaction = {
   amount: number;
   date: string;
   pending: boolean;
+  /** Account this posted to; drives the per-account normalization window. */
+  accountId: string | null;
+  isoCurrencyCode: string | null;
   role:
     | 'expense'
     | 'earned_income'
@@ -129,4 +142,10 @@ export type FactsRecurringStream = {
   confidence: 'high' | 'medium' | 'low';
   lastDate: string;
   userStatus: 'detected' | 'confirmed' | 'dismissed';
+  /**
+   * Dominant economic role of the stream's members. Only 'earned_income'
+   * inflow streams may feed the income estimate; null (pre-migration rows)
+   * reads as not-income.
+   */
+  dominantRole?: string | null;
 };

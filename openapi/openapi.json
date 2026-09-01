@@ -2763,6 +2763,38 @@
                           ],
                           "additionalProperties": false
                         },
+                        "currency": {
+                          "type": "object",
+                          "properties": {
+                            "primary": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "excludedTransactionCount": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "excludedCurrencies": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            }
+                          },
+                          "required": [
+                            "primary",
+                            "excludedTransactionCount",
+                            "excludedCurrencies"
+                          ],
+                          "additionalProperties": false
+                        },
                         "income": {
                           "type": "object",
                           "properties": {
@@ -3051,6 +3083,7 @@
                       "required": [
                         "ruleVersion",
                         "period",
+                        "currency",
                         "income",
                         "spend",
                         "cashObligations",
@@ -3293,6 +3326,11 @@
                       "throughDate": "2026-08-24",
                       "observedDays": 174,
                       "normalizationMonths": 5.72
+                    },
+                    "currency": {
+                      "primary": "USD",
+                      "excludedTransactionCount": 0,
+                      "excludedCurrencies": []
                     },
                     "income": {
                       "monthlyIncomeEstimate": 5200,

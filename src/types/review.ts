@@ -19,7 +19,8 @@ export type CoverageReasonCode =
   | 'UNRESOLVED_TRANSFERS'
   | 'HIGH_UNKNOWN_SHARE'
   | 'NO_CREDIT_VISIBILITY'
-  | 'STALE_SYNC';
+  | 'STALE_SYNC'
+  | 'MIXED_CURRENCY';
 
 export type CoverageReason = {
   code: CoverageReasonCode;

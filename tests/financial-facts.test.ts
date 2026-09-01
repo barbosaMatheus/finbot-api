@@ -24,6 +24,8 @@ function txn(overrides: Partial<FactsTransaction>): FactsTransaction {
     amount: 100,
     date: '2026-08-01',
     pending: false,
+    accountId: null,
+    isoCurrencyCode: 'USD',
     role: 'expense',
     displayBucket: 'Shopping',
     accountType: 'depository',
@@ -44,6 +46,7 @@ function stream(overrides: Partial<FactsRecurringStream>): FactsRecurringStream 
     confidence: 'high',
     lastDate: '2026-08-20',
     userStatus: 'detected',
+    dominantRole: 'earned_income',
     ...overrides,
   };
 }
@@ -272,6 +275,227 @@ describe('computeFinancialFacts', () => {
     const second = computeFinancialFacts(input, THROUGH);
 
     expect(second).toEqual(first);
+  });
+
+  // --- Phase-3 money-math regressions --------------------------------------
+
+  test('an ended payroll stream no longer counts as income (job change)', () => {
+    // Old employer paid biweekly through May; new employer pays monthly.
+    // Summing both used to report ~2x real income.
+    const facts = computeFinancialFacts(
+      data({
+        transactions: [txn({ amount: -4000, role: 'earned_income', date: '2026-08-15' })],
+        streams: [
+          stream({
+            streamKey: 'inflow:old employer',
+            displayName: 'Old Employer',
+            lastDate: '2026-05-10',
+          }),
+          stream({
+            streamKey: 'inflow:new employer',
+            displayName: 'New Employer',
+            cadence: 'monthly',
+            cadenceDays: 30.4,
+            averageAmount: 4000,
+            lastDate: '2026-08-15',
+          }),
+        ],
+      }),
+      THROUGH,
+    );
+
+    expect(facts.income.incomeStreams).toHaveLength(1);
+    expect(facts.income.incomeStreams[0]?.displayName).toBe('New Employer');
+    expect(facts.income.monthlyIncomeEstimate).toBeCloseTo(4000 * (30.44 / 30.4), 0);
+  });
+
+  test('a cancelled subscription stops appearing in recurring outflows', () => {
+    const facts = computeFinancialFacts(
+      data({
+        streams: [
+          stream({
+            streamKey: 'outflow:oldgym',
+            direction: 'outflow',
+            displayName: 'Old Gym',
+            cadence: 'monthly',
+            cadenceDays: 30.4,
+            averageAmount: 60,
+            dominantRole: 'expense',
+            lastDate: '2026-04-01',
+          }),
+          stream({
+            streamKey: 'outflow:netflix',
+            direction: 'outflow',
+            displayName: 'Netflix',
+            cadence: 'monthly',
+            cadenceDays: 30.4,
+            averageAmount: 22.99,
+            dominantRole: 'expense',
+            lastDate: '2026-08-12',
+          }),
+        ],
+      }),
+      THROUGH,
+    );
+
+    expect(facts.recurring.outflows.map((s) => s.displayName)).toEqual(['Netflix']);
+  });
+
+  test('a recurring unknown_inflow stream never becomes income by itself', () => {
+    // A roommate's regular Zelle deposit: classification refused to call it
+    // income, and recurrence must not promote it through the back door.
+    const facts = computeFinancialFacts(
+      data({
+        streams: [
+          stream({
+            streamKey: 'inflow:zelle roommate',
+            displayName: 'Zelle Roommate',
+            averageAmount: 900,
+            dominantRole: 'unknown_inflow',
+          }),
+        ],
+      }),
+      THROUGH,
+    );
+
+    expect(facts.income.incomeStreams).toHaveLength(0);
+    expect(facts.income.estimateSource).toBe('none');
+  });
+
+  test('a user-confirmed inflow stream counts as income regardless of role', () => {
+    // The gig-worker escape hatch: explicit confirmation outranks the
+    // classifier's refusal.
+    const facts = computeFinancialFacts(
+      data({
+        streams: [
+          stream({
+            streamKey: 'inflow:zelle client',
+            displayName: 'Zelle Client',
+            averageAmount: 900,
+            dominantRole: 'unknown_inflow',
+            userStatus: 'confirmed',
+          }),
+        ],
+      }),
+      THROUGH,
+    );
+
+    expect(facts.income.incomeStreams).toHaveLength(1);
+    expect(facts.income.estimateSource).toBe('recurring_streams');
+  });
+
+  test('accounts with unequal history depth normalize independently', () => {
+    // 180 days of checking at $600/mo plus a card connected 30 days ago
+    // with $900 of spend. One global window used to read the card as
+    // ~$150/mo instead of ~$900/mo.
+    const transactions = [
+      txn({ amount: 600, accountId: 'checking', date: '2026-03-01' }),
+      txn({ amount: 600, accountId: 'checking', date: '2026-05-15' }),
+      txn({ amount: 600, accountId: 'checking', date: '2026-08-01' }),
+      txn({ amount: 900, accountId: 'card', accountType: 'credit', date: '2026-08-10' }),
+    ];
+
+    const facts = computeFinancialFacts(data({ transactions }), THROUGH);
+
+    // Checking: 1800 over ~5.8 months ≈ 310/mo. Card: 900 over the 28-day
+    // floor ≈ 978/mo. The combined figure must be near their sum, not the
+    // ~460/mo a global window would produce.
+    expect(facts.spend.averageMonthlyEconomicSpend).toBeGreaterThan(1200);
+    expect(facts.spend.averageMonthlyEconomicSpend).toBeLessThan(1350);
+  });
+
+  test('mixed currencies are excluded and reported, never summed', () => {
+    const facts = computeFinancialFacts(
+      data({
+        transactions: [
+          txn({ amount: 100, isoCurrencyCode: 'USD' }),
+          txn({ amount: 100, isoCurrencyCode: 'USD' }),
+          txn({ amount: 250, isoCurrencyCode: 'CAD' }),
+        ],
+        accounts: [
+          {
+            accountId: 'us-1',
+            name: 'US Checking',
+            type: 'depository',
+            currentBalance: 5000,
+            availableBalance: 5000,
+            isoCurrencyCode: 'USD',
+          },
+          {
+            accountId: 'ca-1',
+            name: 'CA Checking',
+            type: 'depository',
+            currentBalance: 3000,
+            availableBalance: 3000,
+            isoCurrencyCode: 'CAD',
+          },
+        ],
+      }),
+      THROUGH,
+    );
+
+    expect(facts.currency.primary).toBe('USD');
+    expect(facts.currency.excludedTransactionCount).toBe(1);
+    expect(facts.currency.excludedCurrencies).toEqual(['CAD']);
+    expect(facts.spend.grossEconomicSpend).toBe(200);
+    // Balances too: 3000 CAD must not inflate USD assets.
+    expect(facts.balances.totalAssets).toBe(5000);
+  });
+
+  test('unmatched card payment stops inflating obligations once a card is connected', () => {
+    const withCard = computeFinancialFacts(
+      data({
+        transactions: [txn({ amount: 820, role: 'credit_card_payment', linked: false })],
+        accounts: [
+          {
+            accountId: 'card-1',
+            name: 'Card',
+            type: 'credit',
+            currentBalance: 500,
+            availableBalance: null,
+            isoCurrencyCode: 'USD',
+          },
+        ],
+      }),
+      THROUGH,
+    );
+
+    // The card's purchases are already in netSpend; counting its payment
+    // again used to overstate obligations by the full payment amount.
+    expect(withCard.cashObligations.components.externalCardPaymentsMonthly).toBe(0);
+    expect(withCard.cashObligations.averageMonthlyCashObligations).toBe(0);
+    // Still observable as movement so the review can surface it.
+    expect(withCard.movement.externalCardPaymentTotal).toBe(820);
+
+    const withoutCard = computeFinancialFacts(
+      data({
+        transactions: [txn({ amount: 820, role: 'credit_card_payment', linked: false })],
+      }),
+      THROUGH,
+    );
+
+    expect(
+      withoutCard.cashObligations.components.externalCardPaymentsMonthly,
+    ).toBeGreaterThan(0);
+  });
+
+  test('a role contradicting the amount sign lands in unknowns, not nowhere', () => {
+    // e.g. a merchant override calling an inflow 'expense' used to delete
+    // the transaction from every total simultaneously.
+    const facts = computeFinancialFacts(
+      data({
+        transactions: [
+          txn({ amount: -300, role: 'expense' }),
+          txn({ amount: 300, role: 'earned_income' }),
+        ],
+      }),
+      THROUGH,
+    );
+
+    expect(facts.spend.grossEconomicSpend).toBe(0);
+    expect(facts.income.totalObservedIncome).toBe(0);
+    expect(facts.unknowns.unknownInflowTotal).toBe(300);
+    expect(facts.unknowns.unknownOutflowTotal).toBe(300);
   });
 });
 

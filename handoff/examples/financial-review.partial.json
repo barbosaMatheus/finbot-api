@@ -32,6 +32,11 @@
       "observedDays": 174,
       "normalizationMonths": 5.72
     },
+    "currency": {
+      "primary": "USD",
+      "excludedTransactionCount": 0,
+      "excludedCurrencies": []
+    },
     "income": {
       "monthlyIncomeEstimate": 5200,
       "estimateSource": "recurring_streams",

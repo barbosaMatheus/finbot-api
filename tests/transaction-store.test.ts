@@ -152,13 +152,21 @@ describe('applySyncChanges', () => {
     });
 
     expect(counts).toEqual({ added: 1, modified: 1, removed: 0 });
-    expect(db.queries).toHaveLength(2);
+    // Two upserts plus the override-migration statement.
+    expect(db.queries).toHaveLength(3);
 
-    for (const q of db.queries) {
+    for (const q of db.queries.slice(0, 2)) {
       expect(q.text).toContain('ON CONFLICT (transaction_id) DO UPDATE');
       // Re-adding a previously removed transaction resurrects it.
       expect(q.text).toContain('is_removed = FALSE');
     }
+
+    // Corrections survive settle: transaction-scoped overrides move from
+    // the dead pending row to its posted replacement, scoped to this user.
+    const migration = db.queries[2]!;
+    expect(migration.text).toContain('UPDATE user_classification_overrides');
+    expect(migration.text).toContain('pending_transaction_id');
+    expect(migration.values).toEqual(['user-1']);
   });
 
   test('removed ids flip the removed flag instead of deleting evidence', async () => {

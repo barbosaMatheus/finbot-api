@@ -233,6 +233,36 @@ export async function applySyncChanges(
     removed = rowCount ?? 0;
   }
 
+  // Corrections must survive settle. When Plaid replaces a pending
+  // transaction with a posted one (linked via pending_transaction_id), a
+  // transaction-scoped override still points at the soft-removed pending
+  // row and would silently stop applying. Move it to the replacement —
+  // idempotent, user-scoped, and never clobbering an override the posted
+  // row already has.
+  if (input.added.length > 0 || input.modified.length > 0) {
+    await db.query(
+      `UPDATE user_classification_overrides o
+       SET transaction_row_id = posted.id, updated_at = NOW()
+       FROM plaid_transactions posted
+       JOIN plaid_transactions pending_row
+         ON pending_row.transaction_id = posted.pending_transaction_id
+        AND pending_row.user_id = posted.user_id
+       WHERE o.scope = 'transaction'
+         AND o.user_id = $1
+         AND posted.user_id = $1
+         AND posted.pending_transaction_id IS NOT NULL
+         AND posted.is_removed = FALSE
+         AND o.transaction_row_id = pending_row.id
+         AND NOT EXISTS (
+           SELECT 1 FROM user_classification_overrides existing
+           WHERE existing.user_id = o.user_id
+             AND existing.scope = 'transaction'
+             AND existing.transaction_row_id = posted.id
+         )`,
+      [input.userId],
+    );
+  }
+
   return { added, modified, removed };
 }
 

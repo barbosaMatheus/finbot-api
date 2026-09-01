@@ -31,6 +31,8 @@ type FakeState = {
   transitions: string[];
   recomputes: unknown[];
   transactionExists: boolean;
+  /** NUMERIC comes back as text; Plaid sign: positive = money out. */
+  transactionAmount: string;
 };
 
 function makeDeps(overrides: Partial<FakeState> = {}) {
@@ -63,6 +65,7 @@ function makeDeps(overrides: Partial<FakeState> = {}) {
     transitions: [],
     recomputes: [],
     transactionExists: true,
+    transactionAmount: '120',
     ...overrides,
   };
 
@@ -93,9 +96,12 @@ function makeDeps(overrides: Partial<FakeState> = {}) {
         return { rows: [] as R[], rowCount: 1 };
       }
 
-      if (text.includes('SELECT id FROM plaid_transactions')) {
+      if (text.includes('FROM plaid_transactions')) {
         return state.transactionExists
-          ? { rows: [{ id: values[0] } as R], rowCount: 1 }
+          ? {
+              rows: [{ id: values[0], amount: state.transactionAmount } as R],
+              rowCount: 1,
+            }
           : { rows: [] as R[], rowCount: 0 };
       }
 
@@ -302,6 +308,57 @@ describe('applyReviewItemAction', () => {
         deps,
       ),
     ).rejects.toMatchObject({ code: 'INVALID_CORRECTION_SCOPE' });
+  });
+
+  test('reclassify_merchant normalizes the key the same way the pipeline does', async () => {
+    // Regression: "NETFLIX.COM #1234" used to store "netflix.com #1234"
+    // (trim+lowercase only), matching zero merchant_normalized rows — the
+    // user's correction silently did nothing.
+    const { deps, state } = makeDeps();
+
+    await applyReviewItemAction(
+      {
+        ...baseRequest,
+        action: 'reclassify_merchant',
+        value: { merchantNormalized: 'NETFLIX.COM #1234', role: 'expense' },
+      },
+      deps,
+    );
+
+    expect(state.overrides[0]![1]).toBe('netflix');
+  });
+
+  test('a role contradicting the transaction direction is rejected', async () => {
+    // Regression: calling a money-out transaction 'earned_income' used to
+    // store fine and then vanish from every facts total.
+    const { deps } = makeDeps({ transactionAmount: '120' });
+
+    await expect(
+      applyReviewItemAction(
+        {
+          ...baseRequest,
+          action: 'reclassify_transaction',
+          value: { transactionRowId: 'txn-row-9', role: 'earned_income' },
+        },
+        deps,
+      ),
+    ).rejects.toMatchObject({ code: 'INVALID_CORRECTION_SCOPE' });
+  });
+
+  test('a direction-compatible role is accepted', async () => {
+    const { deps, state } = makeDeps({ transactionAmount: '-120' });
+
+    const result = await applyReviewItemAction(
+      {
+        ...baseRequest,
+        action: 'reclassify_transaction',
+        value: { transactionRowId: 'txn-row-9', role: 'earned_income' },
+      },
+      deps,
+    );
+
+    expect(result.recomputeQueued).toBe(true);
+    expect(state.overrides[0]![2]).toBe('earned_income');
   });
 });
 

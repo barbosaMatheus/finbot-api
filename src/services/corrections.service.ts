@@ -12,6 +12,7 @@
 import { pool } from '../db.js';
 import type { Queryable } from '../lib/db-types.js';
 import { logger } from '../lib/logger.js';
+import { normalizeMerchant } from '../lib/merchant.js';
 import type { UserAnalysisJobPayload } from '../jobs/types.js';
 import { ECONOMIC_ROLES, type EconomicRole } from '../types/classification.js';
 import { OnboardingError } from '../types/onboarding.js';
@@ -79,6 +80,40 @@ function assertRole(value: unknown): EconomicRole {
     422,
     'INVALID_CORRECTION_SCOPE',
   );
+}
+
+/** Roles that only make sense for money going out (Plaid sign: positive). */
+const OUTFLOW_ONLY_ROLES: ReadonlySet<EconomicRole> = new Set([
+  'expense',
+  'interest_or_fee',
+  'debt_principal_payment',
+  'unknown_outflow',
+]);
+
+/** Roles that only make sense for money coming in (Plaid sign: negative). */
+const INFLOW_ONLY_ROLES: ReadonlySet<EconomicRole> = new Set([
+  'earned_income',
+  'refund_or_credit',
+  'unknown_inflow',
+]);
+
+/**
+ * A role contradicting the amount's direction would make the transaction
+ * vanish from (or misfile in) every facts total. Rejecting it here gives
+ * the user an actionable error instead of a silently wrong review.
+ */
+function assertRoleMatchesDirection(role: EconomicRole, amount: number): void {
+  const contradiction =
+    (amount > 0 && INFLOW_ONLY_ROLES.has(role)) ||
+    (amount < 0 && OUTFLOW_ONLY_ROLES.has(role));
+
+  if (contradiction) {
+    throw new OnboardingError(
+      `Role "${role}" does not fit a ${amount > 0 ? 'money-out' : 'money-in'} transaction`,
+      422,
+      'INVALID_CORRECTION_SCOPE',
+    );
+  }
 }
 
 function valueAsRecord(value: unknown): Record<string, unknown> {
@@ -299,9 +334,11 @@ async function applySideEffects(
         );
       }
 
-      // Scope check: the transaction must belong to this user.
-      const { rows } = await deps.db.query<{ id: string }>(
-        `SELECT id FROM plaid_transactions WHERE id = $1 AND user_id = $2`,
+      // Scope check: the transaction must belong to this user; the amount
+      // is read alongside so the role can be validated against direction.
+      const { rows } = await deps.db.query<{ id: string; amount: string }>(
+        `SELECT id, amount::text AS amount
+         FROM plaid_transactions WHERE id = $1 AND user_id = $2`,
         [transactionRowId, request.userId],
       );
 
@@ -312,6 +349,8 @@ async function applySideEffects(
           'INVALID_CORRECTION_SCOPE',
         );
       }
+
+      assertRoleMatchesDirection(role, Number(rows[0].amount));
 
       await deps.db.query(
         `INSERT INTO user_classification_overrides (
@@ -349,6 +388,20 @@ async function applySideEffects(
         );
       }
 
+      // The stored key must be the SAME normalization the pipeline writes
+      // to merchant_normalized, or the override matches nothing: a raw
+      // "NETFLIX.COM" would store "netflix.com" while transactions carry
+      // "netflix", and the correction would silently no-op.
+      const merchantKey = normalizeMerchant(merchant);
+
+      if (!merchantKey) {
+        throw new OnboardingError(
+          'That merchant name has no usable identity to match on',
+          422,
+          'INVALID_CORRECTION_SCOPE',
+        );
+      }
+
       await deps.db.query(
         `INSERT INTO user_classification_overrides (
            user_id, scope, merchant_normalized, economic_role, display_bucket, evidence
@@ -362,14 +415,14 @@ async function applySideEffects(
            updated_at = NOW()`,
         [
           request.userId,
-          merchant.trim().toLowerCase(),
+          merchantKey,
           role,
           typeof value.displayBucket === 'string' ? value.displayBucket : null,
           JSON.stringify({ reviewItemKey: item.item_key }),
         ],
       );
 
-      return { merchantNormalized: merchant.trim().toLowerCase(), role };
+      return { merchantNormalized: merchantKey, role };
     }
   }
 }

@@ -181,6 +181,12 @@ class FakeStore {
       return { rows: [], rowCount: count };
     }
 
+    if (sql.startsWith('UPDATE user_classification_overrides')) {
+      // Override migration on pending→posted settle; nothing to move in
+      // these fixtures.
+      return { rows: [], rowCount: 0 };
+    }
+
     if (sql.startsWith('UPDATE plaid_sync_state SET cursor')) {
       this.state.cursor = values[1] as string;
       this.state.update_status = values[2] as string;

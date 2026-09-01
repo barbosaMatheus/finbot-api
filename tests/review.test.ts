@@ -335,6 +335,63 @@ describe('generateReviewItems', () => {
   });
 });
 
+describe('generateReviewItems — high unknown activity', () => {
+  const unknownTxn = (rowId: string, amount: number) => ({
+    rowId,
+    amount,
+    date: '2026-08-01',
+    pending: false,
+    accountId: null,
+    isoCurrencyCode: 'USD',
+    role: 'unknown_outflow' as const,
+    displayBucket: null,
+    accountType: 'depository',
+    linked: false,
+  });
+
+  test('the item carries actionable merchant keys and transaction samples', () => {
+    // Regression: reclassify_transaction was never offered by any item, and
+    // the evidence contained only totals — the client had nothing to
+    // reference, so both reclassify paths were unreachable.
+    const facts = factsFrom({
+      transactions: [unknownTxn('u1', 400), unknownTxn('u2', 300)],
+    });
+
+    const coverage = computeCoverage(coverageInput(facts, [item({})]));
+
+    const generated = generateReviewItems({
+      facts,
+      coverage,
+      items: [item({})],
+      manualMonthlyIncome: null,
+      externalCardPaymentDescription: null,
+      unknownActivity: {
+        topMerchants: [
+          { merchantKey: 'venmo', displayName: 'Venmo', total: 700, count: 2 },
+        ],
+        sampleTransactions: [
+          { transactionRowId: 'u1', displayName: 'VENMO PAYMENT', amount: 400, date: '2026-08-01' },
+        ],
+      },
+    });
+
+    const unknownItem = generated.find((g) => g.type === 'high_unknown_activity');
+
+    expect(unknownItem).toBeDefined();
+    expect(unknownItem!.allowedActions).toEqual(
+      expect.arrayContaining(['reclassify_merchant', 'reclassify_transaction']),
+    );
+
+    const evidence = unknownItem!.evidence as {
+      topMerchants: unknown[];
+      sampleTransactions: unknown[];
+    };
+
+    expect(evidence.topMerchants).toHaveLength(1);
+    expect(evidence.sampleTransactions).toHaveLength(1);
+  });
+});
+
 describe('buildFinancialReview job', () => {
   function buildDeps(runStatus: string) {
     const snapshots: unknown[][] = [];
@@ -384,6 +441,10 @@ describe('buildFinancialReview job', () => {
         startedAt: '2026-08-24T10:00:00Z',
       }),
       getManualMonthlyIncome: async () => null,
+      getUnknownActivity: async () => ({
+        topMerchants: [],
+        sampleTransactions: [],
+      }),
       transitionRun: async (_runId, to) => {
         transitions.push(to);
       },

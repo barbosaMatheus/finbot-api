@@ -201,12 +201,29 @@ export function computeCoverage(input: CoverageInput): Coverage {
   };
 }
 
+/** What the user can actually act on inside the high-unknown review item. */
+export type UnknownActivitySummary = {
+  topMerchants: Array<{
+    merchantKey: string;
+    displayName: string | null;
+    total: number;
+    count: number;
+  }>;
+  sampleTransactions: Array<{
+    transactionRowId: string;
+    displayName: string | null;
+    amount: number;
+    date: string;
+  }>;
+};
+
 export type ReviewItemInput = {
   facts: FinancialFacts;
   coverage: Coverage;
   items: ItemSyncOverview[];
   manualMonthlyIncome: number | null;
   externalCardPaymentDescription: string | null;
+  unknownActivity?: UnknownActivitySummary | null;
 };
 
 /** Only actionable exceptions become review items. */
@@ -297,9 +314,18 @@ export function generateReviewItems(input: ReviewItemInput): GeneratedReviewItem
       evidence: {
         unknownOutflowTotal: facts.unknowns.unknownOutflowTotal,
         unknownShareOfOutflow: facts.unknowns.unknownShareOfOutflow,
+        // Without concrete keys the reclassify actions are unusable: the
+        // client has nothing to reference. Merchant keys here are already
+        // normalized — corrections match them verbatim.
+        topMerchants: input.unknownActivity?.topMerchants ?? [],
+        sampleTransactions: input.unknownActivity?.sampleTransactions ?? [],
       },
       proposedValue: null,
-      allowedActions: ['accept_coverage_limitation', 'reclassify_merchant'],
+      allowedActions: [
+        'accept_coverage_limitation',
+        'reclassify_merchant',
+        'reclassify_transaction',
+      ],
     });
   }
 
@@ -338,6 +364,7 @@ export type ReviewBuildDeps = {
     startedAt: string;
   } | null>;
   getManualMonthlyIncome(userId: string): Promise<number | null>;
+  getUnknownActivity(userId: string): Promise<UnknownActivitySummary>;
   transitionRun(runId: string, to: 'review_ready'): Promise<void>;
   /** Hook for the delayed-push policy (API-015). */
   onReviewReady(payload: UserAnalysisJobPayload, runStartedAt: string): Promise<void>;
@@ -377,6 +404,63 @@ async function defaultDeps(): Promise<ReviewBuildDeps> {
         [userId],
       );
       return rows[0] ? Number(rows[0].monthly_take_home_income) : null;
+    },
+    getUnknownActivity: async (userId) => {
+      const [{ rows: merchantRows }, { rows: txnRows }] = await Promise.all([
+        pool.query<{
+          merchant_normalized: string;
+          display_name: string | null;
+          total: string;
+          count: string;
+        }>(
+          `SELECT t.merchant_normalized,
+                  MAX(COALESCE(t.merchant_name, t.name)) AS display_name,
+                  SUM(ABS(t.amount))::text AS total,
+                  COUNT(*)::text AS count
+           FROM plaid_transactions t
+           JOIN transaction_classifications c ON c.transaction_row_id = t.id
+           JOIN plaid_items i ON i.id = t.plaid_item_id AND i.status = 'active'
+           WHERE t.user_id = $1 AND t.is_removed = FALSE AND t.pending = FALSE
+             AND c.economic_role IN ('unknown_outflow', 'unknown_inflow')
+             AND t.merchant_normalized IS NOT NULL
+           GROUP BY t.merchant_normalized
+           ORDER BY SUM(ABS(t.amount)) DESC
+           LIMIT 5`,
+          [userId],
+        ),
+        pool.query<{
+          id: string;
+          display_name: string | null;
+          amount: string;
+          date: string;
+        }>(
+          `SELECT t.id, COALESCE(t.merchant_name, t.name) AS display_name,
+                  t.amount::text AS amount, t.date::text AS date
+           FROM plaid_transactions t
+           JOIN transaction_classifications c ON c.transaction_row_id = t.id
+           JOIN plaid_items i ON i.id = t.plaid_item_id AND i.status = 'active'
+           WHERE t.user_id = $1 AND t.is_removed = FALSE AND t.pending = FALSE
+             AND c.economic_role IN ('unknown_outflow', 'unknown_inflow')
+           ORDER BY ABS(t.amount) DESC
+           LIMIT 5`,
+          [userId],
+        ),
+      ]);
+
+      return {
+        topMerchants: merchantRows.map((row) => ({
+          merchantKey: row.merchant_normalized,
+          displayName: row.display_name,
+          total: Number(row.total),
+          count: Number(row.count),
+        })),
+        sampleTransactions: txnRows.map((row) => ({
+          transactionRowId: row.id,
+          displayName: row.display_name,
+          amount: Number(row.amount),
+          date: row.date,
+        })),
+      };
     },
     transitionRun: (runId, to) => lifecycle.transitionRun(runId, to),
     onReviewReady: async (payload, runStartedAt) => {
@@ -560,10 +644,11 @@ export async function buildFinancialReview(
     return { snapshotVersion: 0, reviewItems: 0 };
   }
 
-  const [data, items, manualIncome] = await Promise.all([
+  const [data, items, manualIncome, unknownActivity] = await Promise.all([
     deps.loadData(payload.userId),
     deps.getItems(payload.userId),
     deps.getManualMonthlyIncome(payload.userId),
+    deps.getUnknownActivity(payload.userId),
   ]);
 
   const facts = computeFinancialFacts(data, deps.now().toISOString().slice(0, 10));
@@ -584,6 +669,7 @@ export async function buildFinancialReview(
     items,
     manualMonthlyIncome: manualIncome,
     externalCardPaymentDescription: null,
+    unknownActivity,
   });
 
   const snapshot = await createFactSnapshot(deps.db, {

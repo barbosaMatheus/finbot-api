@@ -67,7 +67,17 @@ function text(txn: ClassifiableTransaction): string {
 }
 
 const CARD_PAYMENT_PATTERN =
-  /\b(autopay|card\s*payment|crd\s*pmt|e-?payment|epay|pymt|online\s+payment|payment\s+thank\s+you|cardmember\s+pay)\b/;
+  /\b(autopay|card\s*payment|crd\s*pmt|e-?payment|epay|pymt|online\s+payment|payment\s*[-–]?\s*thank\s*you|cardmember\s+pay)\b/;
+
+/**
+ * Extra descriptors seen on the CARD side of a payment credit — statement
+ * wording only credit-card statements use ("PAYMENT RECEIVED", "DIRECTPAY").
+ * Deliberately NOT merged into CARD_PAYMENT_PATTERN: that pattern also
+ * classifies depository outflows, where "direct pay" wording is ordinary
+ * billpay and must stay classifiable as spend.
+ */
+const CARD_CREDIT_PAYMENT_PATTERN =
+  /\b(payment\s+received|direct\s*pay|ach\s+pmt)\b/;
 
 const PAYROLL_PATTERN =
   /\b(payroll|direct\s*dep(osit)?|dir\s*dep|des:\s*payroll|salary|paycheck)\b/;
@@ -96,7 +106,8 @@ export function classifyTransaction(
     const paymentShaped =
       primary === 'LOAN_PAYMENTS' ||
       detailed === 'TRANSFER_IN_ACCOUNT_TRANSFER' ||
-      CARD_PAYMENT_PATTERN.test(description);
+      CARD_PAYMENT_PATTERN.test(description) ||
+      CARD_CREDIT_PAYMENT_PATTERN.test(description);
 
     if (paymentShaped) {
       return {
@@ -115,7 +126,9 @@ export function classifyTransaction(
       displayBucket: null,
       source: 'account_semantics',
       ruleId: 'credit-inflow-credit',
-      confidence: CARD_PAYMENT_PATTERN.test(description) ? 'high' : 'medium',
+      // A payment-matching description never reaches this branch (it is
+      // paymentShaped above), so this is always the without-evidence case.
+      confidence: 'medium',
       explanation:
         'Incoming credit on a card without payment evidence; treated as a refund, reward, or statement credit — never income.',
     };

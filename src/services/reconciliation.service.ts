@@ -97,6 +97,17 @@ function linkTypeFor(inflow: LinkableTransaction): LinkType {
   return 'internal_transfer';
 }
 
+/**
+ * Stored classification confidence for a link of this match score. The old
+ * code stamped every refinement 'high' regardless of evidence; a weakly
+ * corroborated match must say so, or a wrong link reads as certainty.
+ */
+export function confidenceForScore(score: number): 'high' | 'medium' | 'low' {
+  if (score >= 0.85) return 'high';
+  if (score >= 0.7) return 'medium';
+  return 'low';
+}
+
 /** The refined role both postings receive once linked. */
 export function roleForLinkType(linkType: LinkType): EconomicRole {
   switch (linkType) {
@@ -170,6 +181,15 @@ export function proposeLinks(
       const dayGap = Math.abs(parseDay(outflow.date) - parseDay(inflow.date));
 
       if (dayGap > dateWindowDays) continue;
+
+      // Two mutually-unknown postings share no corroborating signal beyond
+      // the amount, and same amount days apart is exactly how an unrelated
+      // $250 check and a $250 deposit collide. Only near-simultaneous
+      // posting is strong enough to call them one movement.
+      const bothUnknown =
+        outflow.role === 'unknown_outflow' && inflow.role === 'unknown_inflow';
+
+      if (bothUnknown && dayGap > 1) continue;
 
       // Type consistency: a card payment's inflow lands on a credit
       // account; the checking side must not itself be a credit account.
@@ -252,6 +272,9 @@ async function defaultListLinkable(userId: string): Promise<LinkableTransaction[
             c.economic_role, c.source, t.pending
      FROM plaid_transactions t
      JOIN transaction_classifications c ON c.transaction_row_id = t.id
+     -- Same active-item filter as the facts read: a disconnected item's
+     -- postings must not participate in links the facts then cannot see.
+     JOIN plaid_items i ON i.id = t.plaid_item_id AND i.status = 'active'
      LEFT JOIN plaid_accounts a ON a.account_id = t.account_id
      WHERE t.user_id = $1 AND t.is_removed = FALSE`,
     [userId],
@@ -337,7 +360,7 @@ export async function reconcileUserTransfers(
            source = 'reconciliation',
            rule_id = $3,
            rule_version = $4,
-           confidence = 'high',
+           confidence = $6,
            explanation = $5,
            updated_at = NOW()
        WHERE transaction_row_id = ANY($1::uuid[])
@@ -348,6 +371,7 @@ export async function reconcileUserTransfers(
         `link-${link.linkType}`,
         RECONCILIATION_RULE_VERSION,
         `Matched to its counterpart posting (score ${link.score}).`,
+        confidenceForScore(link.score),
       ],
     );
   }

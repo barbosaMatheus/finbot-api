@@ -1,6 +1,7 @@
 import { describe, expect, jest, test } from '@jest/globals';
 
 import {
+  confidenceForScore,
   proposeLinks,
   reconcileUserTransfers,
   roleForLinkType,
@@ -214,6 +215,52 @@ describe('proposeLinks', () => {
 
     expect(links).toHaveLength(1);
     expect(links[0]?.linkType).toBe('internal_transfer');
+  });
+
+  test('two unknown postings days apart never pair (no corroboration)', () => {
+    // Regression: an unrelated $250 check outflow and a $250 deposit six
+    // days later used to link as internal_transfer and vanish from both
+    // spend and income.
+    const outflow = linkable({
+      rowId: 'out-1',
+      amount: 250,
+      role: 'unknown_outflow',
+      date: '2026-08-01',
+    });
+    const inflow = linkable({
+      rowId: 'in-1',
+      accountId: 'other-1',
+      amount: -250,
+      role: 'unknown_inflow',
+      date: '2026-08-07',
+    });
+
+    expect(proposeLinks([outflow, inflow])).toHaveLength(0);
+  });
+
+  test('one known side keeps the wider date window', () => {
+    const outflow = linkable({
+      rowId: 'out-1',
+      amount: 250,
+      role: 'internal_transfer',
+      date: '2026-08-01',
+    });
+    const inflow = linkable({
+      rowId: 'in-1',
+      accountId: 'other-1',
+      amount: -250,
+      role: 'unknown_inflow',
+      date: '2026-08-04',
+    });
+
+    expect(proposeLinks([outflow, inflow])).toHaveLength(1);
+  });
+
+  test('confidence follows the match score instead of blanket high', () => {
+    expect(confidenceForScore(1.0)).toBe('high');
+    expect(confidenceForScore(0.9)).toBe('high');
+    expect(confidenceForScore(0.79)).toBe('medium');
+    expect(confidenceForScore(0.69)).toBe('low');
   });
 
   test('economic expenses are never link candidates', () => {

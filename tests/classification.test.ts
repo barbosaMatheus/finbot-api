@@ -247,6 +247,42 @@ describe('classifyTransaction — payments and transfers', () => {
   });
 });
 
+describe('classifyTransaction — card-payment descriptor coverage', () => {
+  // Regression: these statement descriptors used to miss the payment
+  // pattern, land as refund_or_credit, and erase real spend from
+  // netEconomicSpend via the refunds netting.
+  test.each(['PAYMENT RECEIVED', 'DISCOVER DIRECTPAY', 'PAYMENT - THANK YOU'])(
+    'card credit "%s" is the card side of a payment, not a refund',
+    (name) => {
+      const result = classifyTransaction(
+        txn({ accountType: 'credit', amount: -800, name }),
+      );
+
+      expect(result.role).toBe('credit_card_payment');
+    },
+  );
+
+  test('a plain card credit without payment wording stays a refund', () => {
+    const result = classifyTransaction(
+      txn({ accountType: 'credit', amount: -42, name: 'STATEMENT CREDIT ADJ' }),
+    );
+
+    expect(result.role).toBe('refund_or_credit');
+    expect(result.confidence).toBe('medium');
+  });
+
+  test('checking outflow saying DIRECT PAY is NOT forced into card-payment', () => {
+    // "direct pay" wording on a depository outflow is ordinary billpay
+    // (rent, utilities); only the credit-inflow side treats it as payment
+    // evidence.
+    const result = classifyTransaction(
+      txn({ amount: 1800, name: 'CITY PROPERTIES DIRECT PAY RENT' }),
+    );
+
+    expect(result.role).not.toBe('credit_card_payment');
+  });
+});
+
 describe('classifyTransaction — explicit unknowns', () => {
   test('unresolvable outflow stays unknown_outflow', () => {
     const result = classifyTransaction(txn({ amount: 77, name: 'CHECK 1042' }));

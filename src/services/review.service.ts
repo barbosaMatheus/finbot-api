@@ -655,12 +655,23 @@ export async function buildFinancialReview(
 
   const pendingCount = data.transactions.filter((txn) => txn.pending).length;
 
+  // The freshness dimension reports when data actually last synced — the
+  // newest per-Item sync time — not the build clock, which always read as
+  // "fresh" no matter how stale the underlying data was.
+  const lastSyncedAt = items.reduce<string | null>(
+    (newest, item) =>
+      item.lastSyncedAt && (newest === null || item.lastSyncedAt > newest)
+        ? item.lastSyncedAt
+        : newest,
+    null,
+  );
+
   const coverage = computeCoverage({
     facts,
     items,
     requestedDays: run.requestedLookbackDays,
     pendingCount,
-    lastSyncedAt: deps.now().toISOString(),
+    lastSyncedAt,
   });
 
   const generated = generateReviewItems({

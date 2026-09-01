@@ -28,6 +28,8 @@ export type ItemSyncOverview = {
   oldestTransactionDate: string | null;
   historyDaysAvailable: number | null;
   lastErrorCode: string | null;
+  /** When this Item's data last actually synced (not when it was read). */
+  lastSyncedAt?: string | null;
   terminal: boolean;
   usable: boolean;
 };
@@ -39,6 +41,7 @@ type OverviewRow = {
   update_status: string | null;
   oldest_transaction_date: string | null;
   last_error_code: string | null;
+  last_synced_at: Date | null;
 };
 
 function daysBetween(oldestIso: string, now: Date): number {
@@ -57,7 +60,8 @@ export async function getItemSyncOverviews(
             s.sync_status,
             s.update_status,
             s.oldest_transaction_date::text AS oldest_transaction_date,
-            s.last_error_code
+            s.last_error_code,
+            s.last_synced_at
      FROM plaid_items i
      LEFT JOIN plaid_sync_state s ON s.plaid_item_id = i.id
      WHERE i.user_id = $1 AND i.status = 'active'
@@ -79,6 +83,7 @@ export async function getItemSyncOverviews(
         ? daysBetween(row.oldest_transaction_date, now)
         : null,
       lastErrorCode: row.last_error_code,
+      lastSyncedAt: row.last_synced_at?.toISOString() ?? null,
       terminal,
       usable: syncStatus === 'complete',
     };

@@ -474,6 +474,26 @@ describe('buildFinancialReview job', () => {
     expect(readyHooks).toHaveLength(1);
   });
 
+  test('freshness reports the newest real sync time, not the build clock', async () => {
+    // Regression: lastSyncedAt was stamped deps.now(), so the review always
+    // looked freshly synced no matter how stale the data was.
+    const { deps, snapshots } = buildDeps('processing');
+    deps.getItems = async () => [
+      item({ lastSyncedAt: '2026-08-20T08:00:00.000Z' }),
+      item({ itemRowId: 'b', lastSyncedAt: '2026-08-22T09:30:00.000Z' }),
+    ];
+
+    await buildFinancialReview({ userId: 'user-1', analysisRunId: 'run-1' }, deps);
+
+    const coverage = JSON.parse(String(snapshots[0]![3])) as {
+      dimensions: { freshness: { lastSyncedAt: string | null } };
+    };
+
+    expect(coverage.dimensions.freshness.lastSyncedAt).toBe(
+      '2026-08-22T09:30:00.000Z',
+    );
+  });
+
   test('replay against an already-reviewable run is a no-op', async () => {
     const { deps, snapshots, transitions } = buildDeps('review_ready');
 

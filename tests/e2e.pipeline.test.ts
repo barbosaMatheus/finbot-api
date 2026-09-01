@@ -494,6 +494,10 @@ describeIf('end-to-end financial onboarding pipeline (real Postgres)', () => {
         );
         return rows[0] ? Number(rows[0].monthly_take_home_income) : null;
       },
+      getUnknownActivity: async () => ({
+        topMerchants: [],
+        sampleTransactions: [],
+      }),
       transitionRun: (runId, to) => transitionRun(runId, to),
       onReviewReady: async () => {},
       now: () => NOW,

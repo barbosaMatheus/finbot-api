@@ -1,19 +1,14 @@
-import { apiReference } from '@scalar/express-api-reference';
 import express, { type NextFunction, type Request, type Response } from 'express';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
 import dotenv from 'dotenv';
 import helmet from 'helmet';
-import { openApiDocument } from './lib/openapi.js';
 import authRouter from './routes/auth.js';
 import healthRouter from './routes/health.js';
 import baseIntelligenceRouter from './routes/base-intelligence.js';
 import embedTextRouter from './routes/embbed-text.js';
-<<<<<<< HEAD
 import notificationsRouter from './routes/notifications.js';
-=======
 import queryVectorDbRouter from './routes/query-vector-db.js';
->>>>>>> ab4aeb045a09865b69d85afd4369aaaa9ae00435
 import onboardingRouter from './routes/onboarding.js';
 import plaidRouter from './routes/plaid.js';
 import promptTemplateRouter from './routes/prompt-template.js';
@@ -64,10 +59,6 @@ app.get('/openapi.json', async (_req: Request, res: Response) => {
   }
 });
 
-app.get('/openapi.json', (_req, res) => {
-  res.json(openApiDocument);
-});
-
 const scalarCsp = [
   "default-src 'self'",
   "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net",
@@ -82,7 +73,30 @@ app.use('/docs', (_req: Request, res: Response, next: NextFunction) => {
   res.setHeader('Content-Security-Policy', scalarCsp);
   next();
 });
-app.use('/docs', apiReference({ url: '/openapi.json' }));
+
+// The Scalar reference UI ships as ESM only. Loading it lazily on the first
+// /docs request keeps it out of the CommonJS test transform, which cannot
+// parse it and would otherwise break every test that imports the app.
+type DocsHandler = (req: Request, res: Response, next: NextFunction) => void;
+
+let docsHandler: DocsHandler | null = null;
+
+async function getDocsHandler(): Promise<DocsHandler> {
+  if (!docsHandler) {
+    const { apiReference } = await import('@scalar/express-api-reference');
+    docsHandler = apiReference({ url: '/openapi.json' }) as unknown as DocsHandler;
+  }
+
+  return docsHandler;
+}
+
+app.use('/docs', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    (await getDocsHandler())(req, res, next);
+  } catch (err) {
+    next(err);
+  }
+});
 
 app.use('/health', healthRouter);
 app.use('/auth', authRouter);

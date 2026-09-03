@@ -68,6 +68,7 @@ export const onboardingPayloadSchema = z.object({
   incomePattern: z.enum(INCOME_PATTERNS),
   declaredObligations: z.array(declaredObligationSchema).max(20),
   upcomingEvents: z.array(z.enum(UPCOMING_EVENTS)).max(8),
+  upcomingEventNote: z.string().trim().max(120).nullable(),
   primaryGoal: z.enum(PRIMARY_GOALS),
   secondaryGoals: z.array(z.enum(SECONDARY_GOALS)).max(2),
   goalDetail: goalDetailSchema.nullable(),
@@ -90,6 +91,14 @@ export const onboardingSchema = onboardingPayloadSchema.superRefine((value, ctx)
       code: 'custom',
       path: ['goalDetail'],
       message: 'goalDetail only applies when primaryGoal is save_for_specific',
+    });
+  }
+
+  if (value.upcomingEventNote !== null && !value.upcomingEvents.includes('other')) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['upcomingEventNote'],
+      message: 'upcomingEventNote only applies when upcomingEvents includes other',
     });
   }
 

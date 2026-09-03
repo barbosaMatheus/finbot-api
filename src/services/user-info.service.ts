@@ -48,6 +48,7 @@ type UserInfoRow = {
   income_pattern: string;
   declared_obligations: unknown;
   upcoming_events: string[];
+  upcoming_event_note: string | null;
   primary_goal: string;
   secondary_goals: string[];
   goal_detail: unknown;
@@ -66,6 +67,7 @@ export type PublicUserInfo = {
   incomePattern: IncomePattern;
   declaredObligations: DeclaredObligation[];
   upcomingEvents: UpcomingEvent[];
+  upcomingEventNote: string | null;
   primaryGoal: PrimaryGoal;
   secondaryGoals: SecondaryGoal[];
   goalDetail: GoalDetail | null;
@@ -164,6 +166,10 @@ function toProfile(row: UserInfoRow, additionalContext: string): ManualProfile {
     incomePattern: oneOf(INCOME_PATTERNS, row.income_pattern, 'steady'),
     declaredObligations: parseObligations(row.declared_obligations),
     upcomingEvents: onlyOf(UPCOMING_EVENTS, row.upcoming_events),
+    upcomingEventNote:
+      typeof row.upcoming_event_note === 'string' && row.upcoming_event_note.trim()
+        ? row.upcoming_event_note
+        : null,
     primaryGoal: oneOf(PRIMARY_GOALS, row.primary_goal, 'not_sure'),
     secondaryGoals: onlyOf(SECONDARY_GOALS, row.secondary_goals),
     goalDetail: parseGoalDetail(row.goal_detail),
@@ -184,6 +190,7 @@ function toPublicUserInfo(row: UserInfoRow): PublicUserInfo {
     incomePattern: profile.incomePattern,
     declaredObligations: profile.declaredObligations,
     upcomingEvents: profile.upcomingEvents,
+    upcomingEventNote: profile.upcomingEventNote,
     primaryGoal: profile.primaryGoal,
     secondaryGoals: profile.secondaryGoals,
     goalDetail: profile.goalDetail,
@@ -222,6 +229,7 @@ export async function upsertUserOnboarding(
           income_pattern,
           declared_obligations,
           upcoming_events,
+          upcoming_event_note,
           primary_goal,
           secondary_goals,
           goal_detail,
@@ -230,7 +238,7 @@ export async function upsertUserOnboarding(
         )
         VALUES (
           $1::uuid, $2, $3, $4, $5,
-          $6::jsonb, $7::text[], $8, $9::text[], $10::jsonb, $11,
+          $6::jsonb, $7::text[], $8, $9, $10::text[], $11::jsonb, $12,
           NOW()
         )
         ON CONFLICT (user_id) DO UPDATE SET
@@ -240,6 +248,7 @@ export async function upsertUserOnboarding(
           income_pattern = EXCLUDED.income_pattern,
           declared_obligations = EXCLUDED.declared_obligations,
           upcoming_events = EXCLUDED.upcoming_events,
+          upcoming_event_note = EXCLUDED.upcoming_event_note,
           primary_goal = EXCLUDED.primary_goal,
           secondary_goals = EXCLUDED.secondary_goals,
           goal_detail = EXCLUDED.goal_detail,
@@ -255,6 +264,7 @@ export async function upsertUserOnboarding(
         payload.incomePattern,
         JSON.stringify(payload.declaredObligations),
         payload.upcomingEvents,
+        payload.upcomingEvents.includes('other') ? payload.upcomingEventNote : null,
         payload.primaryGoal,
         payload.secondaryGoals,
         payload.goalDetail === null ? null : JSON.stringify(payload.goalDetail),

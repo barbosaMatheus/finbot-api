@@ -1963,6 +1963,17 @@
                       ]
                     }
                   },
+                  "upcomingEventNote": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 120
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
                   "primaryGoal": {
                     "type": "string",
                     "enum": [
@@ -2053,6 +2064,7 @@
                   "incomePattern",
                   "declaredObligations",
                   "upcomingEvents",
+                  "upcomingEventNote",
                   "primaryGoal",
                   "secondaryGoals",
                   "goalDetail",
@@ -2181,6 +2193,17 @@
                                     ]
                                   }
                                 },
+                                "upcomingEventNote": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string",
+                                      "maxLength": 120
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
                                 "primaryGoal": {
                                   "type": "string",
                                   "enum": [
@@ -2272,6 +2295,7 @@
                                 "incomePattern",
                                 "declaredObligations",
                                 "upcomingEvents",
+                                "upcomingEventNote",
                                 "primaryGoal",
                                 "secondaryGoals",
                                 "goalDetail",

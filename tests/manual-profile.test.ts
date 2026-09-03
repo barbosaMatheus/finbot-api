@@ -18,6 +18,7 @@ const base: ManualProfile = {
     { kind: 'medical_plan', label: null, amount: 900, cadence: 'one_time' },
   ],
   upcomingEvents: ['moving', 'tuition'],
+  upcomingEventNote: null,
   primaryGoal: 'build_cushion',
   secondaryGoals: ['pay_down_debt'],
   goalDetail: null,
@@ -118,6 +119,19 @@ describe('manual profile v2 schema', () => {
     ).toBe(false);
   });
 
+  it('accepts a "something else" note only when other is among the events', () => {
+    expect(
+      onboardingSchema.safeParse({
+        ...base,
+        upcomingEvents: ['other'],
+        upcomingEventNote: 'My lease renews at a higher rent',
+      }).success,
+    ).toBe(true);
+    expect(
+      onboardingSchema.safeParse({ ...base, upcomingEventNote: 'Stray note' }).success,
+    ).toBe(false);
+  });
+
   it('treats an empty "what we cannot see" step as a real answer', () => {
     const result = onboardingSchema.safeParse({
       ...base,
@@ -172,6 +186,16 @@ describe('buildProfileSummary', () => {
     expect(summary).toContain('only person who spends');
     expect(summary).toContain('reported no bills or debts outside the connected accounts');
     expect(summary).not.toContain('Coming up');
+  });
+
+  it('names the "something else" event in the user\'s words', () => {
+    const summary = buildProfileSummary({
+      ...base,
+      upcomingEvents: ['moving', 'other'],
+      upcomingEventNote: 'my lease renews at a higher rent',
+    });
+
+    expect(summary).toContain('moving, my lease renews at a higher rent.');
   });
 
   it('includes the savings target when there is one', () => {

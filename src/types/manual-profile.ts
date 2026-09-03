@@ -88,6 +88,8 @@ export type ManualProfile = {
   incomePattern: IncomePattern;
   declaredObligations: DeclaredObligation[];
   upcomingEvents: UpcomingEvent[];
+  /** What "something else" is, when 'other' is among upcomingEvents. */
+  upcomingEventNote: string | null;
   primaryGoal: PrimaryGoal;
   secondaryGoals: SecondaryGoal[];
   goalDetail: GoalDetail | null;
@@ -220,9 +222,13 @@ export function buildProfileSummary(profile: ManualProfile): string {
   }
 
   if (profile.upcomingEvents.length > 0) {
+    const note = profile.upcomingEventNote?.trim();
+
     lines.push(
       `Coming up in the next six months: ${profile.upcomingEvents
-        .map((event) => UPCOMING_EVENT_LABELS[event])
+        .map((event) =>
+          event === 'other' && note ? note : UPCOMING_EVENT_LABELS[event],
+        )
         .join(', ')}.`,
     );
   }

@@ -8,7 +8,7 @@ const router = Router();
 
 const embeddingOptionsSchema = z.record(z.string(), z.unknown()).optional();
 
-const embedTextSchema = z.object({
+export const embedTextSchema = z.object({
   text: z.string().trim().min(1, 'text is required'),
   userId: z.string().uuid(),
   source: z.string().trim().min(1).optional(),

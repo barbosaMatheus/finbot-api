@@ -15,6 +15,7 @@
     "openapi:generate": "tsx src/openapi/generate.ts --write"
   },
   "dependencies": {
+    "@scalar/express-api-reference": "^0.10.16",
     "bcrypt": "^6.0.0",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
@@ -25,7 +26,8 @@
     "pg": "^8.22.0",
     "pg-boss": "^12.28.0",
     "plaid": "^45.0.0",
-    "zod": "^4.4.3"
+    "zod": "^4.4.3",
+    "zod-openapi": "^6.0.1"
   },
   "devDependencies": {
     "@types/bcrypt": "^6.0.0",

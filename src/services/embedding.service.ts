@@ -5,6 +5,8 @@ import {
 } from '../rag/build-embeddings.js';
 
 export const ONBOARDING_CONTEXT_SOURCE = 'onboarding_additional_context';
+/** The structured wizard answers rendered as plain sentences. */
+export const ONBOARDING_PROFILE_SOURCE = 'onboarding_profile';
 
 type PersistUserTextEmbeddingsInput = {
   userId: string;

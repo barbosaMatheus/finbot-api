@@ -398,12 +398,16 @@ async function defaultDeps(): Promise<ReviewBuildDeps> {
           }
         : null;
     },
+    // The wizard no longer asks for income; the only manual figure is an
+    // override the user set on a previous review, so a mismatch item can
+    // only ever be "your correction disagrees with newer evidence".
     getManualMonthlyIncome: async (userId) => {
-      const { rows } = await pool.query<{ monthly_take_home_income: string }>(
-        `SELECT monthly_take_home_income FROM user_info WHERE user_id = $1`,
+      const { rows } = await pool.query<{ income_override: string | null }>(
+        `SELECT income_override FROM user_info WHERE user_id = $1`,
         [userId],
       );
-      return rows[0] ? Number(rows[0].monthly_take_home_income) : null;
+      const override = rows[0]?.income_override ?? null;
+      return override === null ? null : Number(override);
     },
     getUnknownActivity: async (userId) => {
       const [{ rows: merchantRows }, { rows: txnRows }] = await Promise.all([

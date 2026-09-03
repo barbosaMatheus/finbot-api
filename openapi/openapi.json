@@ -1874,149 +1874,189 @@
               "schema": {
                 "type": "object",
                 "properties": {
-                  "fullName": {
+                  "firstName": {
                     "type": "string",
-                    "minLength": 1
-                  },
-                  "dateOfBirth": {
-                    "type": "string"
-                  },
-                  "maritalStatus": {
-                    "type": "string",
-                    "enum": [
-                      "single",
-                      "married",
-                      "domestic_partnership",
-                      "divorced",
-                      "widowed",
-                      "prefer_not_to_say"
-                    ]
+                    "minLength": 1,
+                    "maxLength": 60
                   },
                   "dependentsCount": {
                     "type": "integer",
                     "minimum": 0,
-                    "maximum": 9007199254740991
+                    "maximum": 20
                   },
-                  "employmentStatus": {
-                    "type": "string",
-                    "enum": [
-                      "full_time",
-                      "part_time",
-                      "self_employed",
-                      "unemployed",
-                      "retired",
-                      "student"
-                    ]
-                  },
-                  "monthlyTakeHomeIncome": {
-                    "type": "number",
-                    "minimum": 0
-                  },
-                  "monthlyHousingCosts": {
-                    "type": "number",
-                    "minimum": 0
-                  },
-                  "monthlyFoodSpend": {
-                    "type": "number",
-                    "minimum": 0
-                  },
-                  "monthlyTransportationCosts": {
-                    "type": "number",
-                    "minimum": 0
-                  },
-                  "subscriptions": {
-                    "minItems": 1,
-                    "type": "array",
-                    "items": {
-                      "type": "string",
-                      "enum": [
-                        "netflix",
-                        "disney_hulu",
-                        "amazon_prime",
-                        "paramount",
-                        "apple",
-                        "xbox",
-                        "playstation",
-                        "nintendo",
-                        "none"
-                      ]
-                    }
-                  },
-                  "monthlyEntertainmentSubscriptionsCosts": {
-                    "type": "number",
-                    "minimum": 0
-                  },
-                  "savingsAndEmergencyFunds": {
-                    "type": "number",
-                    "minimum": 0
-                  },
-                  "totalDebt": {
-                    "type": "number",
-                    "minimum": 0
-                  },
-                  "factorInDebtInterest": {
+                  "sharedAccounts": {
                     "type": "boolean"
                   },
-                  "financialGoals": {
-                    "minItems": 3,
-                    "maxItems": 3,
-                    "type": "array",
-                    "items": {
-                      "type": "string",
-                      "enum": [
-                        "emergency_fund",
-                        "pay_off_debt",
-                        "save_for_retirement",
-                        "save_for_home",
-                        "invest_more",
-                        "reduce_spending"
-                      ]
-                    }
-                  },
-                  "additionalMoneyPools": {
-                    "minItems": 3,
-                    "maxItems": 3,
-                    "type": "array",
-                    "items": {
-                      "type": "string",
-                      "enum": [
-                        "vacation",
-                        "miscellaneous",
-                        "emergency",
-                        "savings",
-                        "investing"
-                      ]
-                    }
-                  },
-                  "riskComfort": {
+                  "incomePattern": {
                     "type": "string",
                     "enum": [
-                      "conservative",
-                      "moderate",
-                      "aggressive"
+                      "steady",
+                      "varies",
+                      "unpredictable",
+                      "none"
+                    ]
+                  },
+                  "declaredObligations": {
+                    "maxItems": 20,
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "enum": [
+                            "rent_to_person",
+                            "family_loan",
+                            "medical_plan",
+                            "child_support",
+                            "owe_friend",
+                            "other"
+                          ]
+                        },
+                        "label": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "maxLength": 80
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "amount": {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 1000000
+                        },
+                        "cadence": {
+                          "type": "string",
+                          "enum": [
+                            "monthly",
+                            "weekly",
+                            "one_time"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "label",
+                        "amount",
+                        "cadence"
+                      ]
+                    }
+                  },
+                  "upcomingEvents": {
+                    "maxItems": 8,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "enum": [
+                        "moving",
+                        "wedding",
+                        "new_baby",
+                        "car",
+                        "tuition",
+                        "big_trip",
+                        "medical",
+                        "other"
+                      ]
+                    }
+                  },
+                  "primaryGoal": {
+                    "type": "string",
+                    "enum": [
+                      "stop_overspending",
+                      "pay_down_debt",
+                      "build_cushion",
+                      "save_for_specific",
+                      "understand_spending",
+                      "not_sure"
+                    ]
+                  },
+                  "secondaryGoals": {
+                    "maxItems": 2,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "enum": [
+                        "stop_overspending",
+                        "pay_down_debt",
+                        "build_cushion",
+                        "save_for_specific",
+                        "understand_spending"
+                      ]
+                    }
+                  },
+                  "goalDetail": {
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "description": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 120
+                          },
+                          "targetAmount": {
+                            "anyOf": [
+                              {
+                                "type": "number",
+                                "minimum": 0,
+                                "maximum": 1000000
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "targetMonth": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "pattern": "^\\d{4}-(0[1-9]|1[0-2])$"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "description",
+                          "targetAmount",
+                          "targetMonth"
+                        ]
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "coachingPace": {
+                    "type": "string",
+                    "enum": [
+                      "ease_in",
+                      "balanced",
+                      "push"
                     ]
                   },
                   "additionalContext": {
-                    "type": "string"
+                    "type": "string",
+                    "maxLength": 2000
                   }
                 },
                 "required": [
-                  "fullName",
-                  "dateOfBirth",
-                  "maritalStatus",
+                  "firstName",
                   "dependentsCount",
-                  "employmentStatus",
-                  "monthlyTakeHomeIncome",
-                  "monthlyHousingCosts",
-                  "monthlyFoodSpend",
-                  "monthlyTransportationCosts",
-                  "subscriptions",
-                  "savingsAndEmergencyFunds",
-                  "totalDebt",
-                  "factorInDebtInterest",
-                  "financialGoals",
-                  "additionalMoneyPools",
-                  "riskComfort",
+                  "sharedAccounts",
+                  "incomePattern",
+                  "declaredObligations",
+                  "upcomingEvents",
+                  "primaryGoal",
+                  "secondaryGoals",
+                  "goalDetail",
+                  "coachingPace",
                   "additionalContext"
                 ]
               }
@@ -2050,10 +2090,195 @@
                           "properties": {
                             "payload": {
                               "type": "object",
-                              "propertyNames": {
-                                "type": "string"
+                              "properties": {
+                                "firstName": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 60
+                                },
+                                "dependentsCount": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 20
+                                },
+                                "sharedAccounts": {
+                                  "type": "boolean"
+                                },
+                                "incomePattern": {
+                                  "type": "string",
+                                  "enum": [
+                                    "steady",
+                                    "varies",
+                                    "unpredictable",
+                                    "none"
+                                  ]
+                                },
+                                "declaredObligations": {
+                                  "maxItems": 20,
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "properties": {
+                                      "kind": {
+                                        "type": "string",
+                                        "enum": [
+                                          "rent_to_person",
+                                          "family_loan",
+                                          "medical_plan",
+                                          "child_support",
+                                          "owe_friend",
+                                          "other"
+                                        ]
+                                      },
+                                      "label": {
+                                        "anyOf": [
+                                          {
+                                            "type": "string",
+                                            "maxLength": 80
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      },
+                                      "amount": {
+                                        "type": "number",
+                                        "minimum": 0,
+                                        "maximum": 1000000
+                                      },
+                                      "cadence": {
+                                        "type": "string",
+                                        "enum": [
+                                          "monthly",
+                                          "weekly",
+                                          "one_time"
+                                        ]
+                                      }
+                                    },
+                                    "required": [
+                                      "kind",
+                                      "label",
+                                      "amount",
+                                      "cadence"
+                                    ],
+                                    "additionalProperties": false
+                                  }
+                                },
+                                "upcomingEvents": {
+                                  "maxItems": 8,
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string",
+                                    "enum": [
+                                      "moving",
+                                      "wedding",
+                                      "new_baby",
+                                      "car",
+                                      "tuition",
+                                      "big_trip",
+                                      "medical",
+                                      "other"
+                                    ]
+                                  }
+                                },
+                                "primaryGoal": {
+                                  "type": "string",
+                                  "enum": [
+                                    "stop_overspending",
+                                    "pay_down_debt",
+                                    "build_cushion",
+                                    "save_for_specific",
+                                    "understand_spending",
+                                    "not_sure"
+                                  ]
+                                },
+                                "secondaryGoals": {
+                                  "maxItems": 2,
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string",
+                                    "enum": [
+                                      "stop_overspending",
+                                      "pay_down_debt",
+                                      "build_cushion",
+                                      "save_for_specific",
+                                      "understand_spending"
+                                    ]
+                                  }
+                                },
+                                "goalDetail": {
+                                  "anyOf": [
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "description": {
+                                          "type": "string",
+                                          "minLength": 1,
+                                          "maxLength": 120
+                                        },
+                                        "targetAmount": {
+                                          "anyOf": [
+                                            {
+                                              "type": "number",
+                                              "minimum": 0,
+                                              "maximum": 1000000
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        },
+                                        "targetMonth": {
+                                          "anyOf": [
+                                            {
+                                              "type": "string",
+                                              "pattern": "^\\d{4}-(0[1-9]|1[0-2])$"
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        }
+                                      },
+                                      "required": [
+                                        "description",
+                                        "targetAmount",
+                                        "targetMonth"
+                                      ],
+                                      "additionalProperties": false
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "coachingPace": {
+                                  "type": "string",
+                                  "enum": [
+                                    "ease_in",
+                                    "balanced",
+                                    "push"
+                                  ]
+                                },
+                                "additionalContext": {
+                                  "type": "string",
+                                  "maxLength": 2000
+                                }
                               },
-                              "additionalProperties": {}
+                              "required": [
+                                "firstName",
+                                "dependentsCount",
+                                "sharedAccounts",
+                                "incomePattern",
+                                "declaredObligations",
+                                "upcomingEvents",
+                                "primaryGoal",
+                                "secondaryGoals",
+                                "goalDetail",
+                                "coachingPace",
+                                "additionalContext"
+                              ],
+                              "additionalProperties": false
                             },
                             "updatedAt": {
                               "type": "string"

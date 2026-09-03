@@ -19,97 +19,95 @@ import {
   getUserOnboarding,
   upsertUserOnboarding,
 } from '../services/user-info.service.js';
+import {
+  COACHING_PACES,
+  INCOME_PATTERNS,
+  OBLIGATION_CADENCES,
+  OBLIGATION_KINDS,
+  PRIMARY_GOALS,
+  SECONDARY_GOALS,
+  UPCOMING_EVENTS,
+  type SecondaryGoal,
+} from '../types/manual-profile.js';
 import { OnboardingError } from '../types/onboarding.js';
 
 const router = Router();
 
-const nonNegativeNumber = z.coerce.number().finite().nonnegative();
+/**
+ * Manual profile v2. The wizard asks only what connected accounts cannot
+ * answer, so the only dollar amounts here are for money that is invisible
+ * to Plaid by definition: off-book obligations and a savings target.
+ */
 
-const dateOfBirthSchema = z
-  .string()
-  .trim()
-  .transform((value, ctx) => {
-    if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
-      return value;
-    }
+const amountSchema = z.number().finite().nonnegative().max(1_000_000);
 
-    const match = /^(0[1-9]|1[0-2])\/(0[1-9]|[12]\d|3[01])\/((?:19|20)\d{2})$/.exec(
-      value,
-    );
+export const declaredObligationSchema = z.object({
+  kind: z.enum(OBLIGATION_KINDS),
+  label: z.string().trim().max(80).nullable(),
+  amount: amountSchema,
+  cadence: z.enum(OBLIGATION_CADENCES),
+});
 
-    if (!match) {
-      ctx.addIssue({
-        code: 'custom',
-        message: 'dateOfBirth must be YYYY-MM-DD or MM/DD/YYYY',
-      });
-      return z.NEVER;
-    }
+export const goalDetailSchema = z.object({
+  description: z.string().trim().min(1).max(120),
+  targetAmount: amountSchema.nullable(),
+  targetMonth: z
+    .string()
+    .regex(/^\d{4}-(0[1-9]|1[0-2])$/, 'targetMonth must be YYYY-MM')
+    .nullable(),
+});
 
-    return `${match[3]}-${match[1]}-${match[2]}`;
-  });
+/**
+ * The profile as stored and returned. No refinements here so the same
+ * schema doubles as the response shape for GET /onboarding/manual.
+ */
+export const onboardingPayloadSchema = z.object({
+  firstName: z.string().trim().min(1).max(60),
+  dependentsCount: z.number().int().min(0).max(20),
+  sharedAccounts: z.boolean(),
+  incomePattern: z.enum(INCOME_PATTERNS),
+  declaredObligations: z.array(declaredObligationSchema).max(20),
+  upcomingEvents: z.array(z.enum(UPCOMING_EVENTS)).max(8),
+  primaryGoal: z.enum(PRIMARY_GOALS),
+  secondaryGoals: z.array(z.enum(SECONDARY_GOALS)).max(2),
+  goalDetail: goalDetailSchema.nullable(),
+  coachingPace: z.enum(COACHING_PACES),
+  additionalContext: z.string().max(2000),
+});
 
-export const onboardingSchema = z.object({
-  fullName: z.string().trim().min(1),
-  dateOfBirth: dateOfBirthSchema,
-  maritalStatus: z.enum([
-    'single',
-    'married',
-    'domestic_partnership',
-    'divorced',
-    'widowed',
-    'prefer_not_to_say',
-  ]),
-  dependentsCount: z.coerce.number().int().nonnegative(),
-  employmentStatus: z.enum([
-    'full_time',
-    'part_time',
-    'self_employed',
-    'unemployed',
-    'retired',
-    'student',
-  ]),
-  monthlyTakeHomeIncome: nonNegativeNumber,
-  monthlyHousingCosts: nonNegativeNumber,
-  monthlyFoodSpend: nonNegativeNumber,
-  monthlyTransportationCosts: nonNegativeNumber,
-  subscriptions: z
-    .array(
-      z.enum([
-        'netflix',
-        'disney_hulu',
-        'amazon_prime',
-        'paramount',
-        'apple',
-        'xbox',
-        'playstation',
-        'nintendo',
-        'none',
-      ]),
-    )
-    .min(1),
-  monthlyEntertainmentSubscriptionsCosts: nonNegativeNumber.optional(),
-  savingsAndEmergencyFunds: nonNegativeNumber,
-  totalDebt: nonNegativeNumber,
-  factorInDebtInterest: z.boolean(),
-  financialGoals: z
-    .array(
-      z.enum([
-        'emergency_fund',
-        'pay_off_debt',
-        'save_for_retirement',
-        'save_for_home',
-        'invest_more',
-        'reduce_spending',
-      ]),
-    )
-    .length(3),
-  additionalMoneyPools: z
-    .array(
-      z.enum(['vacation', 'miscellaneous', 'emergency', 'savings', 'investing']),
-    )
-    .length(3),
-  riskComfort: z.enum(['conservative', 'moderate', 'aggressive']),
-  additionalContext: z.string(),
+/** What PUT /onboarding/manual validates: the payload plus cross-field rules. */
+export const onboardingSchema = onboardingPayloadSchema.superRefine((value, ctx) => {
+  if (value.primaryGoal === 'save_for_specific' && value.goalDetail === null) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['goalDetail'],
+      message: 'goalDetail is required when primaryGoal is save_for_specific',
+    });
+  }
+
+  if (value.primaryGoal !== 'save_for_specific' && value.goalDetail !== null) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['goalDetail'],
+      message: 'goalDetail only applies when primaryGoal is save_for_specific',
+    });
+  }
+
+  if (value.secondaryGoals.includes(value.primaryGoal as SecondaryGoal)) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['secondaryGoals'],
+      message: 'secondaryGoals must not repeat primaryGoal',
+    });
+  }
+
+  if (new Set(value.secondaryGoals).size !== value.secondaryGoals.length) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['secondaryGoals'],
+      message: 'secondaryGoals must not contain duplicates',
+    });
+  }
 });
 
 /**

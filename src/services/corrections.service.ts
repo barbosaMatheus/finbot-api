@@ -266,12 +266,12 @@ async function applySideEffects(
       }
 
       await deps.db.query(
-        `UPDATE user_info SET monthly_take_home_income = $2, updated_at = NOW()
+        `UPDATE user_info SET income_override = $2, updated_at = NOW()
          WHERE user_id = $1`,
         [request.userId, observed],
       );
 
-      return { monthlyTakeHomeIncome: observed, source: 'observed' };
+      return { monthlyIncome: observed, source: 'observed' };
     }
 
     case 'set_value': {
@@ -286,13 +286,15 @@ async function applySideEffects(
         );
       }
 
+      // The review is the only writer of income_override: the wizard never
+      // asks for income, so this is the user's explicit correction.
       await deps.db.query(
-        `UPDATE user_info SET monthly_take_home_income = $2, updated_at = NOW()
+        `UPDATE user_info SET income_override = $2, updated_at = NOW()
          WHERE user_id = $1`,
         [request.userId, amount],
       );
 
-      return { monthlyTakeHomeIncome: amount, source: 'user' };
+      return { monthlyIncome: amount, source: 'user' };
     }
 
     case 'confirm_stream':

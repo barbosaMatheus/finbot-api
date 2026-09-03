@@ -63,67 +63,50 @@ export async function seedDatabase(env: NodeJS.ProcessEnv = process.env): Promis
       throw new Error('Failed to create or update test user');
     }
 
+    // Manual profile v2: only what the wizard asks. Every money figure is
+    // derived from connected accounts, so none is seeded here.
     await client.query(
       `
         INSERT INTO user_info (
           user_id,
-          full_name,
-          date_of_birth,
-          marital_status,
+          first_name,
           dependents_count,
-          employment_status,
-          monthly_take_home_income,
-          monthly_housing_costs,
-          monthly_food_grocery_costs,
-          monthly_transportation_costs,
-          savings_emergency_funds,
-          total_debt,
-          debt_interest_factor,
-          monthly_entertainment_subscriptions_costs,
-          entertainment_subscriptions,
-          financial_goals,
-          additional_money_pools,
-          investment_risk_comfort
+          shared_accounts,
+          income_pattern,
+          declared_obligations,
+          upcoming_events,
+          primary_goal,
+          secondary_goals,
+          goal_detail,
+          coaching_pace
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+        VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::text[], $8, $9::text[], $10::jsonb, $11)
         ON CONFLICT (user_id) DO UPDATE SET
-          full_name = EXCLUDED.full_name,
-          date_of_birth = EXCLUDED.date_of_birth,
-          marital_status = EXCLUDED.marital_status,
+          first_name = EXCLUDED.first_name,
           dependents_count = EXCLUDED.dependents_count,
-          employment_status = EXCLUDED.employment_status,
-          monthly_take_home_income = EXCLUDED.monthly_take_home_income,
-          monthly_housing_costs = EXCLUDED.monthly_housing_costs,
-          monthly_food_grocery_costs = EXCLUDED.monthly_food_grocery_costs,
-          monthly_transportation_costs = EXCLUDED.monthly_transportation_costs,
-          savings_emergency_funds = EXCLUDED.savings_emergency_funds,
-          total_debt = EXCLUDED.total_debt,
-          debt_interest_factor = EXCLUDED.debt_interest_factor,
-          monthly_entertainment_subscriptions_costs = EXCLUDED.monthly_entertainment_subscriptions_costs,
-          entertainment_subscriptions = EXCLUDED.entertainment_subscriptions,
-          financial_goals = EXCLUDED.financial_goals,
-          additional_money_pools = EXCLUDED.additional_money_pools,
-          investment_risk_comfort = EXCLUDED.investment_risk_comfort
+          shared_accounts = EXCLUDED.shared_accounts,
+          income_pattern = EXCLUDED.income_pattern,
+          declared_obligations = EXCLUDED.declared_obligations,
+          upcoming_events = EXCLUDED.upcoming_events,
+          primary_goal = EXCLUDED.primary_goal,
+          secondary_goals = EXCLUDED.secondary_goals,
+          goal_detail = EXCLUDED.goal_detail,
+          coaching_pace = EXCLUDED.coaching_pace
       `,
       [
         userId,
-        'Test User',
-        '1990-01-01',
-        'Single',
+        'Test',
         0,
-        'Full-time',
-        5200.5,
-        1800.25,
-        650.75,
-        320.5,
-        9000,
-        1500,
         false,
-        45.5,
-        ['Netflix', 'Spotify'],
-        ['Build emergency fund', 'Save for retirement', 'Reduce spending'],
-        ['Vacation', 'Emergency'],
-        'Moderate',
+        'steady',
+        JSON.stringify([
+          { kind: 'family_loan', label: null, amount: 100, cadence: 'monthly' },
+        ]),
+        ['big_trip'],
+        'build_cushion',
+        ['pay_down_debt'],
+        null,
+        'balanced',
       ],
     );
 

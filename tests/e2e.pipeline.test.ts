@@ -278,17 +278,13 @@ describeIf('end-to-end financial onboarding pipeline (real Postgres)', () => {
     // Manual profile answers (the wizard's output), saved directly.
     await pool.query(
       `INSERT INTO user_info (
-         user_id, full_name, marital_status, dependents_count,
-         employment_status, monthly_take_home_income, monthly_housing_costs,
-         monthly_food_grocery_costs, monthly_transportation_costs,
-         savings_emergency_funds, total_debt, debt_interest_factor,
-         monthly_entertainment_subscriptions_costs, entertainment_subscriptions,
-         financial_goals, additional_money_pools, investment_risk_comfort
+         user_id, first_name, dependents_count, shared_accounts, income_pattern,
+         declared_obligations, upcoming_events, primary_goal, secondary_goals,
+         goal_detail, coaching_pace, income_override
        ) VALUES (
-         $1, 'E2E Tester', 'Single', 0, 'Full-time', 9500, 1800, 600, 200,
-         5000, 0, FALSE, 16, '{}',
-         ARRAY['Build emergency fund','Pay off debt','Invest more'],
-         ARRAY['Vacation','Emergency','Savings'], 'Moderate'
+         $1, 'E2E', 0, FALSE, 'steady',
+         '[]'::jsonb, '{}', 'build_cushion', ARRAY['pay_down_debt'],
+         NULL, 'balanced', 9500
        )`,
       [userId],
     );
@@ -488,11 +484,12 @@ describeIf('end-to-end financial onboarding pipeline (real Postgres)', () => {
           : null;
       },
       getManualMonthlyIncome: async (uid) => {
-        const { rows } = await pool.query<{ monthly_take_home_income: string }>(
-          `SELECT monthly_take_home_income FROM user_info WHERE user_id = $1`,
+        const { rows } = await pool.query<{ income_override: string | null }>(
+          `SELECT income_override FROM user_info WHERE user_id = $1`,
           [uid],
         );
-        return rows[0] ? Number(rows[0].monthly_take_home_income) : null;
+        const override = rows[0]?.income_override ?? null;
+        return override === null ? null : Number(override);
       },
       getUnknownActivity: async () => ({
         topMerchants: [],

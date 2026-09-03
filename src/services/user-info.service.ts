@@ -1,6 +1,25 @@
 import { pool } from '../db.js';
 import {
+  buildProfileSummary,
+  COACHING_PACES,
+  INCOME_PATTERNS,
+  OBLIGATION_CADENCES,
+  OBLIGATION_KINDS,
+  PRIMARY_GOALS,
+  SECONDARY_GOALS,
+  UPCOMING_EVENTS,
+  type CoachingPace,
+  type DeclaredObligation,
+  type GoalDetail,
+  type IncomePattern,
+  type ManualProfile,
+  type PrimaryGoal,
+  type SecondaryGoal,
+  type UpcomingEvent,
+} from '../types/manual-profile.js';
+import {
   ONBOARDING_CONTEXT_SOURCE,
+  ONBOARDING_PROFILE_SOURCE,
   replaceUserTextEmbeddings,
   type PersistedEmbeddingResult,
 } from './embedding.service.js';
@@ -9,249 +28,237 @@ import {
   recomputeOnboardingComplete,
 } from './onboarding-lifecycle.service.js';
 
-export type OnboardingPayload = {
-  fullName: string;
-  dateOfBirth: string;
-  maritalStatus:
-    | 'single'
-    | 'married'
-    | 'domestic_partnership'
-    | 'divorced'
-    | 'widowed'
-    | 'prefer_not_to_say';
-  dependentsCount: number;
-  employmentStatus:
-    | 'full_time'
-    | 'part_time'
-    | 'self_employed'
-    | 'unemployed'
-    | 'retired'
-    | 'student';
-  monthlyTakeHomeIncome: number;
-  monthlyHousingCosts: number;
-  monthlyFoodSpend: number;
-  monthlyTransportationCosts: number;
-  subscriptions: Array<
-    | 'netflix'
-    | 'disney_hulu'
-    | 'amazon_prime'
-    | 'paramount'
-    | 'apple'
-    | 'xbox'
-    | 'playstation'
-    | 'nintendo'
-    | 'none'
-  >;
-  monthlyEntertainmentSubscriptionsCosts?: number;
-  savingsAndEmergencyFunds: number;
-  totalDebt: number;
-  factorInDebtInterest: boolean;
-  financialGoals: Array<
-    | 'emergency_fund'
-    | 'pay_off_debt'
-    | 'save_for_retirement'
-    | 'save_for_home'
-    | 'invest_more'
-    | 'reduce_spending'
-  >;
-  additionalMoneyPools: Array<
-    'vacation' | 'miscellaneous' | 'emergency' | 'savings' | 'investing'
-  >;
-  riskComfort: 'conservative' | 'moderate' | 'aggressive';
-  /** Free-text final question — embedded, not stored on user_info. */
-  additionalContext: string;
-};
+/**
+ * Manual profile persistence (v2).
+ *
+ * `user_info` holds only what the wizard asks — nothing the facts engine
+ * derives. The one money column on the table, `income_override`, is written
+ * by review corrections alone and is deliberately not part of the payload,
+ * so saving the wizard can never clobber a value the user set on the review.
+ */
+
+export type OnboardingPayload = ManualProfile;
 
 type UserInfoRow = {
   id: string;
   user_id: string;
-  full_name: string;
-  date_of_birth: Date | null;
-  marital_status: string;
+  first_name: string;
   dependents_count: number;
-  employment_status: string;
-  monthly_take_home_income: string;
-  monthly_housing_costs: string;
-  monthly_food_grocery_costs: string;
-  monthly_transportation_costs: string;
-  savings_emergency_funds: string;
-  total_debt: string;
-  debt_interest_factor: boolean;
-  monthly_entertainment_subscriptions_costs: string;
-  entertainment_subscriptions: string[];
-  financial_goals: string[];
-  additional_money_pools: string[];
-  investment_risk_comfort: string;
+  shared_accounts: boolean;
+  income_pattern: string;
+  declared_obligations: unknown;
+  upcoming_events: string[];
+  primary_goal: string;
+  secondary_goals: string[];
+  goal_detail: unknown;
+  coaching_pace: string;
+  income_override: string | null;
   created_at: Date;
   updated_at: Date;
 };
 
-const MARITAL_STATUS_LABELS: Record<OnboardingPayload['maritalStatus'], string> = {
-  single: 'Single',
-  married: 'Married',
-  domestic_partnership: 'Domestic Partnership',
-  divorced: 'Divorced',
-  widowed: 'Widowed',
-  prefer_not_to_say: 'Prefer not to say',
+export type PublicUserInfo = {
+  id: string;
+  userId: string;
+  firstName: string;
+  dependentsCount: number;
+  sharedAccounts: boolean;
+  incomePattern: IncomePattern;
+  declaredObligations: DeclaredObligation[];
+  upcomingEvents: UpcomingEvent[];
+  primaryGoal: PrimaryGoal;
+  secondaryGoals: SecondaryGoal[];
+  goalDetail: GoalDetail | null;
+  coachingPace: CoachingPace;
+  /** Set only by review corrections; null until then. */
+  incomeOverride: number | null;
+  createdAt: Date;
+  updatedAt: Date;
 };
 
-const EMPLOYMENT_STATUS_LABELS: Record<OnboardingPayload['employmentStatus'], string> = {
-  full_time: 'Full-time',
-  part_time: 'Part-time',
-  self_employed: 'Self-employed',
-  unemployed: 'Unemployed',
-  retired: 'Retired',
-  student: 'Student',
-};
+// ---------------------------------------------------------------------------
+// Row → domain (defensive: JSONB and TEXT[] columns are validated on read)
+// ---------------------------------------------------------------------------
 
-const SUBSCRIPTION_LABELS: Record<OnboardingPayload['subscriptions'][number], string> = {
-  netflix: 'Netflix',
-  disney_hulu: 'Disney / Hulu',
-  amazon_prime: 'Amazon Prime',
-  paramount: 'Paramount+',
-  apple: 'Apple',
-  xbox: 'Xbox',
-  playstation: 'PlayStation',
-  nintendo: 'Nintendo',
-  none: 'None of these',
-};
+function oneOf<T extends string>(allowed: readonly T[], value: unknown, fallback: T): T {
+  return typeof value === 'string' && (allowed as readonly string[]).includes(value)
+    ? (value as T)
+    : fallback;
+}
 
-const FINANCIAL_GOAL_LABELS: Record<OnboardingPayload['financialGoals'][number], string> = {
-  emergency_fund: 'Build emergency fund',
-  pay_off_debt: 'Pay off debt',
-  save_for_retirement: 'Save for retirement',
-  save_for_home: 'Save for a home',
-  invest_more: 'Invest more',
-  reduce_spending: 'Reduce spending',
-};
+function onlyOf<T extends string>(allowed: readonly T[], values: unknown): T[] {
+  if (!Array.isArray(values)) {
+    return [];
+  }
 
-const MONEY_POOL_LABELS: Record<OnboardingPayload['additionalMoneyPools'][number], string> = {
-  vacation: 'Vacation',
-  miscellaneous: 'Miscellaneous',
-  emergency: 'Emergency',
-  savings: 'Savings',
-  investing: 'Investing',
-};
+  return values.filter(
+    (value): value is T =>
+      typeof value === 'string' && (allowed as readonly string[]).includes(value),
+  );
+}
 
-const RISK_COMFORT_LABELS: Record<OnboardingPayload['riskComfort'], string> = {
-  conservative: 'Conservative',
-  moderate: 'Moderate',
-  aggressive: 'Aggressive',
-};
+function parseObligations(value: unknown): DeclaredObligation[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
 
-function toPublicUserInfo(row: UserInfoRow) {
+  const parsed: DeclaredObligation[] = [];
+
+  for (const entry of value) {
+    if (!entry || typeof entry !== 'object') {
+      continue;
+    }
+
+    const record = entry as Record<string, unknown>;
+    const amount = Number(record.amount);
+
+    if (!Number.isFinite(amount) || amount < 0) {
+      continue;
+    }
+
+    parsed.push({
+      kind: oneOf(OBLIGATION_KINDS, record.kind, 'other'),
+      label: typeof record.label === 'string' && record.label.trim() ? record.label : null,
+      amount,
+      cadence: oneOf(OBLIGATION_CADENCES, record.cadence, 'monthly'),
+    });
+  }
+
+  return parsed;
+}
+
+function parseGoalDetail(value: unknown): GoalDetail | null {
+  if (!value || typeof value !== 'object') {
+    return null;
+  }
+
+  const record = value as Record<string, unknown>;
+
+  if (typeof record.description !== 'string' || !record.description.trim()) {
+    return null;
+  }
+
+  const targetAmount = Number(record.targetAmount);
+
+  return {
+    description: record.description,
+    targetAmount:
+      record.targetAmount !== null &&
+      record.targetAmount !== undefined &&
+      Number.isFinite(targetAmount) &&
+      targetAmount >= 0
+        ? targetAmount
+        : null,
+    targetMonth:
+      typeof record.targetMonth === 'string' && /^\d{4}-\d{2}$/.test(record.targetMonth)
+        ? record.targetMonth
+        : null,
+  };
+}
+
+function toProfile(row: UserInfoRow, additionalContext: string): ManualProfile {
+  return {
+    firstName: row.first_name,
+    dependentsCount: row.dependents_count,
+    sharedAccounts: row.shared_accounts,
+    incomePattern: oneOf(INCOME_PATTERNS, row.income_pattern, 'steady'),
+    declaredObligations: parseObligations(row.declared_obligations),
+    upcomingEvents: onlyOf(UPCOMING_EVENTS, row.upcoming_events),
+    primaryGoal: oneOf(PRIMARY_GOALS, row.primary_goal, 'not_sure'),
+    secondaryGoals: onlyOf(SECONDARY_GOALS, row.secondary_goals),
+    goalDetail: parseGoalDetail(row.goal_detail),
+    coachingPace: oneOf(COACHING_PACES, row.coaching_pace, 'balanced'),
+    additionalContext,
+  };
+}
+
+function toPublicUserInfo(row: UserInfoRow): PublicUserInfo {
+  const profile = toProfile(row, '');
+
   return {
     id: row.id,
     userId: row.user_id,
-    fullName: row.full_name,
-    dateOfBirth: row.date_of_birth,
-    maritalStatus: row.marital_status,
-    dependentsCount: row.dependents_count,
-    employmentStatus: row.employment_status,
-    monthlyTakeHomeIncome: Number(row.monthly_take_home_income),
-    monthlyHousingCosts: Number(row.monthly_housing_costs),
-    monthlyFoodGroceryCosts: Number(row.monthly_food_grocery_costs),
-    monthlyTransportationCosts: Number(row.monthly_transportation_costs),
-    savingsEmergencyFunds: Number(row.savings_emergency_funds),
-    totalDebt: Number(row.total_debt),
-    debtInterestFactor: row.debt_interest_factor,
-    monthlyEntertainmentSubscriptionsCosts: Number(
-      row.monthly_entertainment_subscriptions_costs,
-    ),
-    entertainmentSubscriptions: row.entertainment_subscriptions,
-    financialGoals: row.financial_goals,
-    additionalMoneyPools: row.additional_money_pools,
-    investmentRiskComfort: row.investment_risk_comfort,
+    firstName: profile.firstName,
+    dependentsCount: profile.dependentsCount,
+    sharedAccounts: profile.sharedAccounts,
+    incomePattern: profile.incomePattern,
+    declaredObligations: profile.declaredObligations,
+    upcomingEvents: profile.upcomingEvents,
+    primaryGoal: profile.primaryGoal,
+    secondaryGoals: profile.secondaryGoals,
+    goalDetail: profile.goalDetail,
+    coachingPace: profile.coachingPace,
+    incomeOverride: row.income_override === null ? null : Number(row.income_override),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
 }
 
+// ---------------------------------------------------------------------------
+// Save
+// ---------------------------------------------------------------------------
+
 export async function upsertUserOnboarding(
   userId: string,
   payload: OnboardingPayload,
 ): Promise<{
-  userInfo: ReturnType<typeof toPublicUserInfo>;
+  userInfo: PublicUserInfo;
   additionalContextEmbedding: PersistedEmbeddingResult | null;
 }> {
-  const entertainmentSubscriptions = payload.subscriptions.includes('none')
-    ? []
-    : payload.subscriptions.map((value) => SUBSCRIPTION_LABELS[value]);
-
   const client = await pool.connect();
 
   try {
     await client.query('BEGIN');
 
+    // income_override is intentionally absent from both lists: the wizard
+    // never sets it and re-saving the wizard must not reset it.
     const { rows } = await client.query<UserInfoRow>(
       `
         INSERT INTO user_info (
           user_id,
-          full_name,
-          date_of_birth,
-          marital_status,
+          first_name,
           dependents_count,
-          employment_status,
-          monthly_take_home_income,
-          monthly_housing_costs,
-          monthly_food_grocery_costs,
-          monthly_transportation_costs,
-          savings_emergency_funds,
-          total_debt,
-          debt_interest_factor,
-          monthly_entertainment_subscriptions_costs,
-          entertainment_subscriptions,
-          financial_goals,
-          additional_money_pools,
-          investment_risk_comfort,
+          shared_accounts,
+          income_pattern,
+          declared_obligations,
+          upcoming_events,
+          primary_goal,
+          secondary_goals,
+          goal_detail,
+          coaching_pace,
           updated_at
         )
         VALUES (
-          $1::uuid, $2, $3::date, $4, $5, $6,
-          $7, $8, $9, $10, $11, $12, $13, $14,
-          $15::text[], $16::text[], $17::text[], $18,
+          $1::uuid, $2, $3, $4, $5,
+          $6::jsonb, $7::text[], $8, $9::text[], $10::jsonb, $11,
           NOW()
         )
         ON CONFLICT (user_id) DO UPDATE SET
-          full_name = EXCLUDED.full_name,
-          date_of_birth = EXCLUDED.date_of_birth,
-          marital_status = EXCLUDED.marital_status,
+          first_name = EXCLUDED.first_name,
           dependents_count = EXCLUDED.dependents_count,
-          employment_status = EXCLUDED.employment_status,
-          monthly_take_home_income = EXCLUDED.monthly_take_home_income,
-          monthly_housing_costs = EXCLUDED.monthly_housing_costs,
-          monthly_food_grocery_costs = EXCLUDED.monthly_food_grocery_costs,
-          monthly_transportation_costs = EXCLUDED.monthly_transportation_costs,
-          savings_emergency_funds = EXCLUDED.savings_emergency_funds,
-          total_debt = EXCLUDED.total_debt,
-          debt_interest_factor = EXCLUDED.debt_interest_factor,
-          monthly_entertainment_subscriptions_costs = EXCLUDED.monthly_entertainment_subscriptions_costs,
-          entertainment_subscriptions = EXCLUDED.entertainment_subscriptions,
-          financial_goals = EXCLUDED.financial_goals,
-          additional_money_pools = EXCLUDED.additional_money_pools,
-          investment_risk_comfort = EXCLUDED.investment_risk_comfort,
+          shared_accounts = EXCLUDED.shared_accounts,
+          income_pattern = EXCLUDED.income_pattern,
+          declared_obligations = EXCLUDED.declared_obligations,
+          upcoming_events = EXCLUDED.upcoming_events,
+          primary_goal = EXCLUDED.primary_goal,
+          secondary_goals = EXCLUDED.secondary_goals,
+          goal_detail = EXCLUDED.goal_detail,
+          coaching_pace = EXCLUDED.coaching_pace,
           updated_at = NOW()
         RETURNING *
       `,
       [
         userId,
-        payload.fullName,
-        payload.dateOfBirth,
-        MARITAL_STATUS_LABELS[payload.maritalStatus],
+        payload.firstName,
         payload.dependentsCount,
-        EMPLOYMENT_STATUS_LABELS[payload.employmentStatus],
-        payload.monthlyTakeHomeIncome,
-        payload.monthlyHousingCosts,
-        payload.monthlyFoodSpend,
-        payload.monthlyTransportationCosts,
-        payload.savingsAndEmergencyFunds,
-        payload.totalDebt,
-        payload.factorInDebtInterest,
-        payload.monthlyEntertainmentSubscriptionsCosts ?? 0,
-        entertainmentSubscriptions,
-        payload.financialGoals.map((value) => FINANCIAL_GOAL_LABELS[value]),
-        payload.additionalMoneyPools.map((value) => MONEY_POOL_LABELS[value]),
-        RISK_COMFORT_LABELS[payload.riskComfort],
+        payload.sharedAccounts,
+        payload.incomePattern,
+        JSON.stringify(payload.declaredObligations),
+        payload.upcomingEvents,
+        payload.primaryGoal,
+        payload.secondaryGoals,
+        payload.goalDetail === null ? null : JSON.stringify(payload.goalDetail),
+        payload.coachingPace,
       ],
     );
 
@@ -262,6 +269,14 @@ export async function upsertUserOnboarding(
     await recomputeOnboardingComplete(client, userId);
 
     await client.query('COMMIT');
+
+    // Two context documents, replaced per source so a re-save is idempotent:
+    // the structured answers as plain sentences, and the user's own words.
+    await replaceUserTextEmbeddings({
+      userId,
+      text: buildProfileSummary(payload),
+      source: ONBOARDING_PROFILE_SOURCE,
+    });
 
     const additionalContextEmbedding = await replaceUserTextEmbeddings({
       userId,
@@ -281,20 +296,9 @@ export async function upsertUserOnboarding(
   }
 }
 
-function invert<K extends string, V extends string>(
-  record: Record<K, V>,
-): Record<V, K> {
-  return Object.fromEntries(
-    Object.entries(record).map(([key, value]) => [value, key]),
-  ) as Record<V, K>;
-}
-
-const MARITAL_STATUS_KEYS = invert(MARITAL_STATUS_LABELS);
-const EMPLOYMENT_STATUS_KEYS = invert(EMPLOYMENT_STATUS_LABELS);
-const SUBSCRIPTION_KEYS = invert(SUBSCRIPTION_LABELS);
-const FINANCIAL_GOAL_KEYS = invert(FINANCIAL_GOAL_LABELS);
-const MONEY_POOL_KEYS = invert(MONEY_POOL_LABELS);
-const RISK_COMFORT_KEYS = invert(RISK_COMFORT_LABELS);
+// ---------------------------------------------------------------------------
+// Resume
+// ---------------------------------------------------------------------------
 
 export type SavedOnboarding = {
   payload: OnboardingPayload;
@@ -303,8 +307,8 @@ export type SavedOnboarding = {
 
 /**
  * The saved manual answers in the exact shape the wizard submits, so the
- * client can resume without re-mapping labels. Returns null when the user has
- * not saved anything yet.
+ * client can resume without re-mapping. Returns null when the user has not
+ * saved anything yet.
  */
 export async function getUserOnboarding(
   userId: string,
@@ -329,41 +333,8 @@ export async function getUserOnboarding(
     [userId, ONBOARDING_CONTEXT_SOURCE],
   );
 
-  const subscriptions = row.entertainment_subscriptions
-    .map((label) => SUBSCRIPTION_KEYS[label])
-    .filter((key): key is NonNullable<typeof key> => Boolean(key));
-
-  const payload: OnboardingPayload = {
-    fullName: row.full_name,
-    dateOfBirth: row.date_of_birth
-      ? row.date_of_birth.toISOString().slice(0, 10)
-      : '',
-    maritalStatus: MARITAL_STATUS_KEYS[row.marital_status] ?? 'prefer_not_to_say',
-    dependentsCount: row.dependents_count,
-    employmentStatus: EMPLOYMENT_STATUS_KEYS[row.employment_status] ?? 'unemployed',
-    monthlyTakeHomeIncome: Number(row.monthly_take_home_income),
-    monthlyHousingCosts: Number(row.monthly_housing_costs),
-    monthlyFoodSpend: Number(row.monthly_food_grocery_costs),
-    monthlyTransportationCosts: Number(row.monthly_transportation_costs),
-    subscriptions: subscriptions.length > 0 ? subscriptions : ['none'],
-    monthlyEntertainmentSubscriptionsCosts: Number(
-      row.monthly_entertainment_subscriptions_costs,
-    ),
-    savingsAndEmergencyFunds: Number(row.savings_emergency_funds),
-    totalDebt: Number(row.total_debt),
-    factorInDebtInterest: row.debt_interest_factor,
-    financialGoals: row.financial_goals
-      .map((label) => FINANCIAL_GOAL_KEYS[label])
-      .filter((key): key is NonNullable<typeof key> => Boolean(key)),
-    additionalMoneyPools: row.additional_money_pools
-      .map((label) => MONEY_POOL_KEYS[label])
-      .filter((key): key is NonNullable<typeof key> => Boolean(key)),
-    riskComfort: RISK_COMFORT_KEYS[row.investment_risk_comfort] ?? 'moderate',
-    additionalContext: contextRows[0]?.context ?? '',
-  };
-
   return {
-    payload,
+    payload: toProfile(row, contextRows[0]?.context ?? ''),
     updatedAt: row.updated_at.toISOString(),
   };
 }

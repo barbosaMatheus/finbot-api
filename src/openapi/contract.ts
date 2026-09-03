@@ -14,6 +14,7 @@ import { registerSchema as pushRegisterSchema } from '../routes/notifications.js
 import {
   confirmSchema,
   correctionSchema,
+  onboardingPayloadSchema,
   onboardingSchema,
 } from '../routes/onboarding.js';
 import {
@@ -99,7 +100,9 @@ export const hostedLinkCompletionSchema = z.union([
 export const savedOnboardingResponseSchema = z.object({
   saved: z
     .object({
-      payload: z.record(z.string(), z.unknown()),
+      // The exact shape the wizard submits, so the client resumes without
+      // re-mapping and the generated types know every field.
+      payload: onboardingPayloadSchema,
       updatedAt: z.string(),
     })
     .nullable(),

@@ -243,6 +243,58 @@ describe('generateReviewItems', () => {
     });
   });
 
+  test('a large single-hit low-confidence stream is surfaced even when it normalizes small', () => {
+    const facts = factsFrom({
+      streams: [
+        {
+          streamKey: 'outflow:oakridge hoa',
+          direction: 'outflow',
+          displayName: 'Oakridge HOA',
+          cadence: 'annual',
+          cadenceDays: 365,
+          averageAmount: 500,
+          amountVariance: 0,
+          confidence: 'low',
+          lastDate: '2026-08-03',
+          userStatus: 'detected',
+          dominantRole: 'expense',
+        },
+        {
+          streamKey: 'outflow:small gym',
+          direction: 'outflow',
+          displayName: 'Small Gym',
+          cadence: 'monthly',
+          cadenceDays: 30.4,
+          averageAmount: 30,
+          amountVariance: 0.3,
+          confidence: 'low',
+          lastDate: '2026-08-10',
+          userStatus: 'detected',
+          dominantRole: 'expense',
+        },
+      ],
+    });
+    const coverage = computeCoverage(coverageInput(facts, [item({})]));
+
+    const items = generateReviewItems({
+      facts,
+      coverage,
+      items: [item({})],
+      manualMonthlyIncome: null,
+      externalCardPaymentDescription: null,
+    });
+
+    const keys = items
+      .filter((entry) => entry.type === 'unconfirmed_recurring_stream')
+      .map((entry) => entry.itemKey);
+
+    // $500 once a year is ~$42/month — under the monthly bar, but exactly
+    // the hit a plan must know about.
+    expect(keys).toContain('stream:outflow:oakridge hoa');
+    // $30/month at low confidence moves nothing; it stays off the review.
+    expect(keys).not.toContain('stream:outflow:small gym');
+  });
+
   test('material manual-vs-observed income conflict is a required item', () => {
     const facts = factsFrom({
       transactions: [

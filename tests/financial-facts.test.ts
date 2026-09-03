@@ -188,6 +188,45 @@ describe('computeFinancialFacts', () => {
     expect(facts.spend.averageMonthlyEconomicSpend).toBeLessThan(120);
   });
 
+  test('spend normalizes over the trailing six months; coverage still reports the full history', () => {
+    // 24 months of $100/month, then the last six months at $300/month. Two
+    // years are pulled for long-cadence bill detection; "what you spend
+    // now" must read ~300, not the two-year ~150.
+    const transactions: FactsTransaction[] = [];
+
+    for (let i = 0; i < 24; i += 1) {
+      const date = new Date(Date.UTC(2024, 8 + i, 1)).toISOString().slice(0, 10);
+      transactions.push(txn({ amount: i >= 18 ? 300 : 100, role: 'expense', date }));
+    }
+
+    const facts = computeFinancialFacts(data({ transactions }), THROUGH);
+
+    expect(facts.period.oldestObservedDate).toBe('2024-09-01');
+    expect(facts.period.observedDays).toBeGreaterThan(700);
+    expect(facts.period.spendWindowDays).toBe(182);
+    expect(facts.period.spendWindowStart).toBe('2026-02-24');
+    expect(facts.spend.averageMonthlyEconomicSpend).toBeGreaterThan(270);
+    expect(facts.spend.averageMonthlyEconomicSpend).toBeLessThan(330);
+    // The window clips totals too: six in-window postings, not 24.
+    expect(facts.spend.categoryTotals[0]?.transactionCount).toBe(6);
+  });
+
+  test('history shorter than the spend window reports its own length', () => {
+    const facts = computeFinancialFacts(
+      data({
+        transactions: [
+          txn({ amount: 100, role: 'expense', date: '2026-06-01' }),
+          txn({ amount: 100, role: 'expense', date: '2026-08-01' }),
+        ],
+      }),
+      THROUGH,
+    );
+
+    expect(facts.period.observedDays).toBe(85);
+    expect(facts.period.spendWindowDays).toBe(85);
+    expect(facts.period.spendWindowStart).toBe('2026-06-01');
+  });
+
   test('short windows are floored to ~one month to avoid wild extrapolation', () => {
     const facts = computeFinancialFacts(
       data({

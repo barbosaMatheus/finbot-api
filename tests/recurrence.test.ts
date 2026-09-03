@@ -224,6 +224,56 @@ describe('detectRecurringStreams', () => {
     const quarterly = series({ merchantKey: 'water utility', amount: 130 }, 91, 4);
     expect(detectRecurringStreams(quarterly)[0]!.cadence).toBe('quarterly');
   });
+
+  test('semi-annual cadence is recognized', () => {
+    const premium = series({ merchantKey: 'geico', amount: 712 }, 182, 4, [0, 3, -2, 1]);
+    const streams = detectRecurringStreams(premium);
+
+    expect(streams).toHaveLength(1);
+    expect(streams[0]).toMatchObject({ cadence: 'semiannual', confidence: 'high' });
+  });
+
+  test('two matching long-cadence outflows surface as a low-confidence candidate', () => {
+    const premium = [
+      input({ merchantKey: 'geico', amount: 712, date: '2026-02-14' }),
+      input({ merchantKey: 'geico', amount: 705, date: '2026-08-16' }),
+    ];
+    const hoa = [
+      input({ merchantKey: 'oakridge hoa', amount: 500, date: '2025-08-01' }),
+      input({ merchantKey: 'oakridge hoa', amount: 500, date: '2026-08-03' }),
+    ];
+
+    const streams = detectRecurringStreams([...premium, ...hoa]);
+
+    expect(streams).toHaveLength(2);
+    expect(streams.find((stream) => stream.merchantKey === 'geico')).toMatchObject({
+      cadence: 'semiannual',
+      confidence: 'low',
+      occurrences: 2,
+    });
+    expect(streams.find((stream) => stream.merchantKey === 'oakridge hoa')).toMatchObject({
+      cadence: 'annual',
+      confidence: 'low',
+      occurrences: 2,
+    });
+  });
+
+  test('two occurrences stay out when amounts differ, the gap is short, or the direction is inflow', () => {
+    const mismatched = [
+      input({ merchantKey: 'geico', amount: 712, date: '2026-02-14' }),
+      input({ merchantKey: 'geico', amount: 400, date: '2026-08-16' }),
+    ];
+    expect(detectRecurringStreams(mismatched)).toHaveLength(0);
+
+    const shortGap = series({ merchantKey: 'gym co', amount: 40 }, 30, 2);
+    expect(detectRecurringStreams(shortGap)).toHaveLength(0);
+
+    const bonus = [
+      input({ merchantKey: 'acme bonus', amount: -3000, role: 'earned_income', date: '2025-08-15' }),
+      input({ merchantKey: 'acme bonus', amount: -3000, role: 'earned_income', date: '2026-08-14' }),
+    ];
+    expect(detectRecurringStreams(bonus)).toHaveLength(0);
+  });
 });
 
 describe('detectUserRecurring job', () => {

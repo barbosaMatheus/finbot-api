@@ -197,6 +197,8 @@ export const financialFactsSchema = z.object({
     oldestObservedDate: z.string().nullable(),
     throughDate: z.string(),
     observedDays: z.number().int(),
+    spendWindowDays: z.number().int(),
+    spendWindowStart: z.string().nullable(),
     normalizationMonths: z.number(),
   }),
   currency: z.object({
@@ -382,11 +384,13 @@ export const reviewExample = {
     availableToSpend: 7400,
   },
   fullFacts: {
-    ruleVersion: 'facts-v1',
+    ruleVersion: 'facts-v2',
     period: {
       oldestObservedDate: '2026-03-04',
       throughDate: '2026-08-24',
       observedDays: 174,
+      spendWindowDays: 174,
+      spendWindowStart: '2026-03-04',
       normalizationMonths: 5.72,
     },
     currency: {

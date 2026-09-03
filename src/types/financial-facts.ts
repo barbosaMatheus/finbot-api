@@ -7,7 +7,7 @@
  * (how complete the records are) is a separate concept stored alongside.
  */
 
-export const FACTS_RULE_VERSION = 'facts-v1';
+export const FACTS_RULE_VERSION = 'facts-v2';
 
 export type CategoryTotal = {
   bucket: string;
@@ -44,7 +44,17 @@ export type FinancialFacts = {
     oldestObservedDate: string | null;
     throughDate: string;
     observedDays: number;
-    /** Months used for monthly normalization (observedDays / 30.44, floored at ~1). */
+    /**
+     * Flow totals and monthly figures (spend, observed income, obligations)
+     * are computed over at most this many trailing days, so "what you
+     * spend now" tracks the recent past even when two years of history
+     * were pulled for long-cadence bill detection. Recurring streams use
+     * the full history. Effective value: min(observedDays, 182).
+     */
+    spendWindowDays: number;
+    /** First date inside the spend window; null with no history. */
+    spendWindowStart: string | null;
+    /** Months the monthly figures were normalized over (spendWindowDays / 30.44, floored at ~1). */
     normalizationMonths: number;
   };
   /**

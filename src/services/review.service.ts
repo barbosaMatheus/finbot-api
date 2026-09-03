@@ -330,7 +330,14 @@ export function generateReviewItems(input: ReviewItemInput): GeneratedReviewItem
   }
 
   for (const stream of facts.recurring.outflows) {
-    if (stream.confidence === 'low' && stream.monthlyAmount >= 50) {
+    // Surfaced when it moves the monthly picture OR when a single hit is
+    // large: a $500 annual HOA payment normalizes to ~$42/month, under the
+    // monthly bar, yet is exactly the bill a plan must not be surprised by.
+    if (
+      stream.confidence === 'low' &&
+      (stream.monthlyAmount >= 50 ||
+        (stream.averageAmount >= 250 && stream.cadence !== 'irregular'))
+    ) {
       generated.push({
         itemKey: `stream:${stream.streamKey}`,
         type: 'unconfirmed_recurring_stream',

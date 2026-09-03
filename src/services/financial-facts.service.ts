@@ -25,12 +25,25 @@ import {
 const DAYS_PER_MONTH = 30.44;
 const UNCATEGORIZED = 'Uncategorized';
 
+/**
+ * Trailing window (six months) for every flow total and monthly figure.
+ * History is pulled two years deep so long-cadence bills can be detected,
+ * but a two-year average smooths over a raise or a move, and the review
+ * must describe the recent past. Recurring streams — computed upstream over
+ * the full history — are unaffected.
+ */
+export const SPEND_WINDOW_DAYS = 182;
+
 function roundCents(value: number): number {
   return Math.round(value * 100) / 100 + 0;
 }
 
 function parseDay(iso: string): number {
   return Date.parse(`${iso}T00:00:00Z`) / 86_400_000;
+}
+
+function isoDate(day: number): string {
+  return new Date(day * 86_400_000).toISOString().slice(0, 10);
 }
 
 function monthlyFromCadence(averageAmount: number, cadenceDays: number): number {
@@ -103,11 +116,7 @@ export function computeFinancialFacts(
     inPrimary(account.isoCurrencyCode),
   );
 
-  // --- Per-account normalization windows -----------------------------------
-  // One global window understates accounts with shallow history: 30 days of
-  // card activity normalized over a 180-day checking window reads ~6× too
-  // low. Every monthly figure is the sum of per-account contributions, each
-  // normalized over that account's own observed window.
+  // --- Observed coverage (full history) ------------------------------------
   const oldestByAccount = new Map<string | null, string>();
   let oldest: string | null = null;
 
@@ -124,9 +133,25 @@ export function computeFinancialFacts(
     ? Math.max(1, Math.round(parseDay(throughDate) - parseDay(oldest)) + 1)
     : 0;
 
-  // Floor every window at ~one month so two days of history cannot
-  // extrapolate into a wild monthly figure.
-  const normalizationMonths = Math.max(observedDays, 28) / DAYS_PER_MONTH;
+  // --- Trailing spend window -----------------------------------------------
+  // Every flow total and monthly figure below is computed over the trailing
+  // SPEND_WINDOW_DAYS only (see the constant). Coverage above still reports
+  // the full history so the review can say how much was seen.
+  const windowStart = isoDate(parseDay(throughDate) - (SPEND_WINDOW_DAYS - 1));
+  const inWindow = settled.filter((txn) => txn.date >= windowStart);
+  const spendWindowStart =
+    oldest === null ? null : oldest > windowStart ? oldest : windowStart;
+  const spendWindowDays =
+    oldest === null ? 0 : Math.min(observedDays, SPEND_WINDOW_DAYS);
+
+  // --- Per-account normalization windows -----------------------------------
+  // One global window understates accounts with shallow history: 30 days of
+  // card activity normalized over a 180-day checking window reads ~6× too
+  // low. Every monthly figure is the sum of per-account contributions, each
+  // normalized over that account's own observed window, clipped to the
+  // trailing spend window. Floor every window at ~one month so two days of
+  // history cannot extrapolate into a wild monthly figure.
+  const normalizationMonths = Math.max(spendWindowDays, 28) / DAYS_PER_MONTH;
 
   const monthsForAccount = (accountId: string | null): number => {
     const accountOldest = oldestByAccount.get(accountId);
@@ -135,9 +160,10 @@ export function computeFinancialFacts(
       return normalizationMonths;
     }
 
+    const accountStart = accountOldest > windowStart ? accountOldest : windowStart;
     const days = Math.max(
       1,
-      Math.round(parseDay(throughDate) - parseDay(accountOldest)) + 1,
+      Math.round(parseDay(throughDate) - parseDay(accountStart)) + 1,
     );
 
     return Math.max(days, 28) / DAYS_PER_MONTH;
@@ -162,7 +188,7 @@ export function computeFinancialFacts(
 
   const buckets = new Map<string, { total: number; monthly: number; count: number }>();
 
-  for (const txn of settled) {
+  for (const txn of inWindow) {
     const magnitude = Math.abs(txn.amount);
     const months = monthsForAccount(txn.accountId);
 
@@ -311,6 +337,8 @@ export function computeFinancialFacts(
       oldestObservedDate: oldest,
       throughDate,
       observedDays,
+      spendWindowDays,
+      spendWindowStart,
       normalizationMonths: Math.round(normalizationMonths * 100) / 100,
     },
     currency: {

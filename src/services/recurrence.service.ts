@@ -17,7 +17,7 @@ import { logger } from '../lib/logger.js';
 import type { UserAnalysisJobPayload } from '../jobs/types.js';
 import type { EconomicRole } from '../types/classification.js';
 
-export const RECURRENCE_RULE_VERSION = 'recur-v1';
+export const RECURRENCE_RULE_VERSION = 'recur-v2';
 
 /** Roles that can form outgoing recurring streams (bills, subscriptions). */
 const OUTFLOW_STREAM_ROLES: ReadonlySet<EconomicRole> = new Set([
@@ -49,6 +49,7 @@ export type Cadence =
   | 'biweekly'
   | 'monthly'
   | 'quarterly'
+  | 'semiannual'
   | 'annual'
   | 'irregular';
 
@@ -86,8 +87,18 @@ const CADENCE_CLASSES: Array<{ cadence: Cadence; days: number; tolerance: number
   { cadence: 'biweekly', days: 14, tolerance: 3 },
   { cadence: 'monthly', days: 30.4, tolerance: 6 },
   { cadence: 'quarterly', days: 91, tolerance: 14 },
+  { cadence: 'semiannual', days: 182, tolerance: 21 },
   { cadence: 'annual', days: 365, tolerance: 30 },
 ];
+
+/**
+ * Cadences long enough that three occurrences would need a year or more of
+ * history. Two matching outflows at one of these gaps may form a candidate.
+ */
+const LONG_CADENCES: ReadonlySet<Cadence> = new Set(['quarterly', 'semiannual', 'annual']);
+
+/** Two occurrences form a candidate only when their amounts agree this closely. */
+const SPARSE_AMOUNT_TOLERANCE = 0.1;
 
 function median(values: readonly number[]): number {
   if (values.length === 0) return 0;
@@ -112,6 +123,31 @@ function classifyCadence(medianGap: number): { cadence: Cadence; tolerance: numb
   }
 
   return { cadence: 'irregular', tolerance: 0 };
+}
+
+/**
+ * Long-cadence bills — insurance premiums, HOA dues, annual fees — are the
+ * largest single hits a plan can be surprised by, and they take years to
+ * reach three occurrences. Two settled OUTFLOWS to the same merchant, a gap
+ * in a quarterly-or-longer class and amounts within 10 % of each other are
+ * surfaced as a LOW-confidence candidate for the user to confirm on the
+ * review. Nothing else this thin becomes a stream; inflows never do (a
+ * bonus twice a year must not become income through this door).
+ */
+function isSparseLongCadenceCandidate(
+  occurrences: ReadonlyArray<{ date: string; amount: number }>,
+  direction: 'inflow' | 'outflow',
+): boolean {
+  if (direction !== 'outflow' || occurrences.length !== 2) return false;
+
+  const [first, second] = occurrences;
+  const gap = parseDay(second!.date) - parseDay(first!.date);
+  if (!LONG_CADENCES.has(classifyCadence(gap).cadence)) return false;
+
+  const larger = Math.max(first!.amount, second!.amount);
+  if (larger <= 0) return false;
+
+  return Math.abs(first!.amount - second!.amount) / larger <= SPARSE_AMOUNT_TOLERANCE;
 }
 
 /**
@@ -166,7 +202,9 @@ export function detectRecurringStreams(
       }))
       .sort((a, b) => parseDay(a.date) - parseDay(b.date));
 
-    if (occurrences.length < minOccurrences) continue;
+    const direction = streamKey.startsWith('outflow') ? 'outflow' : 'inflow';
+    const sparse = occurrences.length < minOccurrences;
+    if (sparse && !isSparseLongCadenceCandidate(occurrences, direction)) continue;
 
     const gaps: number[] = [];
     for (let i = 1; i < occurrences.length; i += 1) {
@@ -191,7 +229,11 @@ export function detectRecurringStreams(
 
     let confidence: RecurringStream['confidence'];
 
-    if (cadence !== 'irregular' && gapRegularity >= 0.8 && relVariance <= 0.15) {
+    if (sparse) {
+      // One gap is trivially "regular"; two matching amounts are trivially
+      // "fixed". The evidence is thin by construction, so say so.
+      confidence = 'low';
+    } else if (cadence !== 'irregular' && gapRegularity >= 0.8 && relVariance <= 0.15) {
       confidence = 'high';
     } else if (cadence !== 'irregular' && gapRegularity >= 0.6 && relVariance <= 0.5) {
       confidence = 'medium';
@@ -199,7 +241,6 @@ export function detectRecurringStreams(
       confidence = 'low';
     }
 
-    const direction = streamKey.startsWith('outflow') ? 'outflow' : 'inflow';
     const displayName =
       group.find((input) => input.displayName)?.displayName ??
       group[0]!.merchantKey ??

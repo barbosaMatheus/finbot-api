@@ -180,7 +180,7 @@ export async function createLinkToken(
           }
         : {
             products: getPlaidProducts(),
-            // Up to 180 days of history so recurrence detection and
+            // Up to 730 days of history so long-cadence bills, recurrence and
             // baselines have enough signal. Institutions with less simply
             // return what they have.
             transactions: { days_requested: getRequestedHistoryDays() },

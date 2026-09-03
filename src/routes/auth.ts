@@ -13,7 +13,7 @@ import { AuthError } from '../types/auth.js';
 
 const router = Router();
 
-const credentialsSchema = z.object({
+export const credentialsSchema = z.object({
   email: z.email(),
   password: z.string().min(8),
 });

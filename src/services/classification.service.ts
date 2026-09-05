@@ -42,6 +42,24 @@ const DISPLAY_BUCKETS: Record<string, string> = {
 
 const UNCATEGORIZED = 'Uncategorized';
 
+/**
+ * Two PFC primaries are split by their detailed category because the plan
+ * treats the halves differently: groceries and fuel are essentials the
+ * gameplan never caps, eating out and other transport are discretionary
+ * (gameplan note §2). Everything else keeps its primary's bucket.
+ */
+function displayBucketFor(primary: string, detailed: string): string | undefined {
+  if (primary === 'FOOD_AND_DRINK') {
+    return detailed === 'FOOD_AND_DRINK_GROCERIES' ? 'Groceries' : 'Eating Out';
+  }
+
+  if (primary === 'TRANSPORTATION') {
+    return detailed === 'TRANSPORTATION_GAS' ? 'Fuel' : 'Transportation';
+  }
+
+  return DISPLAY_BUCKETS[primary];
+}
+
 function pfcConfidenceBand(confidence: string | null): ConfidenceBand {
   switch (confidence) {
     case 'VERY_HIGH':
@@ -289,13 +307,15 @@ export function classifyTransaction(
   // --- Ordinary categorized spend -----------------------------------------
 
   if (outflow && primary && DISPLAY_BUCKETS[primary]) {
+    const bucket = displayBucketFor(primary, detailed) ?? UNCATEGORIZED;
+
     return {
       role: 'expense',
-      displayBucket: DISPLAY_BUCKETS[primary] ?? UNCATEGORIZED,
+      displayBucket: bucket,
       source: 'pfc',
       ruleId: 'pfc-expense',
       confidence: pfcConfidenceBand(txn.pfcConfidence),
-      explanation: `Categorized spend (${DISPLAY_BUCKETS[primary]}).`,
+      explanation: `Categorized spend (${bucket}).`,
     };
   }
 

@@ -17,6 +17,7 @@ import {
   type DeclaredObligation,
 } from '../types/manual-profile.js';
 import { parseObligations } from './user-info.service.js';
+import { isStreamStale } from '../lib/streams.js';
 import {
   FACTS_RULE_VERSION,
   type AccountBalance,
@@ -110,20 +111,9 @@ export type FactsData = {
   declaredObligations: DeclaredObligation[];
 };
 
-/**
- * A stream whose last occurrence is much older than its cadence has ended —
- * a previous employer's payroll, a cancelled subscription. Grace is 2× the
- * cadence with a 21-day floor so a weekly stream survives a short vacation.
- * User-confirmed streams follow the same physics: money that stopped
- * arriving is not income.
- */
-export function isStreamStale(
-  stream: Pick<FactsRecurringStream, 'cadenceDays' | 'lastDate'>,
-  throughDate: string,
-): boolean {
-  const graceDays = Math.max(2 * stream.cadenceDays, 21);
-  return parseDay(throughDate) - parseDay(stream.lastDate) > graceDays;
-}
+// The staleness rule lives in lib/streams.ts so the gameplan engine can
+// share it without importing the database pool; re-exported for callers.
+export { isStreamStale };
 
 /** The lowest and highest recent amount, the range the review quotes; null with no evidence. */
 export function amountRangeOf(amounts: readonly number[]): { low: number; high: number } | null {

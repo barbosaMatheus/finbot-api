@@ -19,14 +19,6 @@ export const embedTextSchema = z.object({
   embeddingOptions: embeddingOptionsSchema.optional(),
 });
 
-// Re-export builders for any existing imports.
-export {
-  buildChunkEmbeddings,
-  buildEmbeddingVector,
-  type BuildEmbeddingVectorOptions,
-  type ChunkEmbedding,
-} from '../rag/build-embeddings.js';
-
 router.post('/', validateBody(embedTextSchema), async (req, res, next) => {
   try {
     const body = req.body as z.infer<typeof embedTextSchema>;

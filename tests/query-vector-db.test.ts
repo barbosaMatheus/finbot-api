@@ -11,7 +11,8 @@ jest.mock('../src/db', () => ({
   pgVectorSize: 3,
 }));
 
-jest.mock('../src/routes/embbed-text', () => ({
+jest.mock('../src/rag/build-embeddings', () => ({
+  ...jest.requireActual('../src/rag/build-embeddings'),
   buildEmbeddingVector: jest.fn(() => [0.5, 0.5, 0.5]),
 }));
 
@@ -22,7 +23,7 @@ jest.mock('../src/lib/jwt.js', () => ({
 import queryVectorDbRouter from '../src/routes/query-vector-db.js';
 import { pool } from '../src/db.js';
 import { verifyAccessToken } from '../src/lib/jwt.js';
-import { buildEmbeddingVector } from '../src/routes/embbed-text.js';
+import { buildEmbeddingVector } from '../src/rag/build-embeddings.js';
 
 const mockedPool = pool as any;
 const mockedVerifyAccessToken = verifyAccessToken as jest.MockedFunction<typeof verifyAccessToken>;

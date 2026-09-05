@@ -71,8 +71,6 @@ export type ReviewItemType =
   | 'high_unknown_activity'
   | 'unconfirmed_recurring_stream';
 
-export type ReviewItemStatus = 'open' | 'resolved' | 'accepted' | 'dismissed';
-
 export type ReviewItemAction =
   | 'connect_account'
   | 'accept_coverage_limitation'
@@ -92,11 +90,4 @@ export type GeneratedReviewItem = {
   evidence: Record<string, unknown>;
   proposedValue: Record<string, unknown> | null;
   allowedActions: ReviewItemAction[];
-};
-
-export type ReviewItemRecord = GeneratedReviewItem & {
-  id: string;
-  status: ReviewItemStatus;
-  confirmedValue: unknown;
-  resolvedAt: string | null;
 };

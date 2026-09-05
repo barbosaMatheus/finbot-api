@@ -12,10 +12,10 @@ import { pool } from '../db.js';
 import type { Queryable } from '../lib/db-types.js';
 import { logger } from '../lib/logger.js';
 import type { UserAnalysisJobPayload } from '../jobs/types.js';
-import { summarizeBalances } from './facts.service.js';
-import type { AccountBalance } from '../types/facts.js';
 import {
   FACTS_RULE_VERSION,
+  type AccountBalance,
+  type BalanceSummary,
   type CategoryTotal,
   type FactsRecurringStream,
   type FactsTransaction,
@@ -49,6 +49,51 @@ function isoDate(day: number): string {
 function monthlyFromCadence(averageAmount: number, cadenceDays: number): number {
   if (cadenceDays <= 0) return 0;
   return roundCents(averageAmount * (DAYS_PER_MONTH / cadenceDays));
+}
+
+/** Plaid account types whose balance is debt, not money the user has. */
+const LIABILITY_TYPES: ReadonlySet<string> = new Set(['credit', 'loan']);
+
+/**
+ * Rolls up account balances into assets, liabilities, and what is actually
+ * spendable right now.
+ *
+ * Credit and loan balances are reported by Plaid as positive numbers
+ * representing debt, so they are summed into liabilities rather than assets —
+ * treating a credit card balance as money you have is the single most
+ * dangerous mistake this function could make.
+ *
+ * `availableToSpend` counts only depository accounts, and prefers available
+ * balance over current balance because the difference is money already
+ * committed to pending transactions.
+ */
+export function summarizeBalances(accounts: readonly AccountBalance[]): BalanceSummary {
+  let totalAssets = 0;
+  let totalLiabilities = 0;
+  let availableToSpend = 0;
+
+  for (const account of accounts) {
+    const current = account.currentBalance ?? 0;
+
+    if (LIABILITY_TYPES.has(account.type)) {
+      totalLiabilities += current;
+      continue;
+    }
+
+    totalAssets += current;
+
+    if (account.type === 'depository') {
+      availableToSpend += account.availableBalance ?? current;
+    }
+  }
+
+  return {
+    totalAssets: roundCents(totalAssets),
+    totalLiabilities: roundCents(totalLiabilities),
+    netPosition: roundCents(totalAssets - totalLiabilities),
+    availableToSpend: roundCents(availableToSpend),
+    accountCount: accounts.length,
+  };
 }
 
 export type FactsData = {

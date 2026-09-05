@@ -15,6 +15,7 @@
     "openapi:generate": "tsx src/openapi/generate.ts --write"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.124.0",
     "@scalar/express-api-reference": "^0.10.16",
     "bcrypt": "^6.0.0",
     "cookie-parser": "^1.4.7",

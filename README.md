@@ -42,6 +42,13 @@ node -e "console.log(require('node:crypto').randomBytes(32).toString('base64'))"
 Running under Docker Compose? This file is not used — the stack is configured
 from the repo root instead. See `../DOCKER.md`.
 
+Optional: `LLM_PROVIDER` selects the model host for gameplan narration
+(`template` by default, `ollama` for local, `anthropic` for hosted; see
+`.env.example`). The model writes words around numbers the engine computed and
+never chooses one — every number in its words is checked against its input, and
+anything else falls back to a plain template, so the API runs with no model
+host configured.
+
 `GET /health` reports API status and Postgres connectivity (`"db": "up" | "down"`).
 
 ## Auth

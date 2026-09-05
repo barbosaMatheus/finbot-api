@@ -3,10 +3,12 @@ import { describe, expect, jest, test } from '@jest/globals';
 import {
   buildFinancialFacts,
   computeFinancialFacts,
+  summarizeBalances,
   type FactsData,
   type FactsJobDeps,
 } from '../src/services/financial-facts.service.js';
 import type {
+  AccountBalance,
   FactsRecurringStream,
   FactsTransaction,
 } from '../src/types/financial-facts.js';
@@ -560,5 +562,44 @@ describe('buildFinancialFacts job', () => {
 
     expect(facts.period.throughDate).toBe('2026-08-24');
     expect(chained).toEqual([{ userId: 'user-1', analysisRunId: 'run-1' }]);
+  });
+});
+
+describe('summarizeBalances', () => {
+  const accounts: AccountBalance[] = [
+    { accountId: 'a', name: 'Checking', type: 'depository', currentBalance: 1500, availableBalance: 1420 },
+    { accountId: 'b', name: 'Savings', type: 'depository', currentBalance: 5000, availableBalance: 5000 },
+    { accountId: 'c', name: 'Visa', type: 'credit', currentBalance: 800, availableBalance: null },
+  ];
+
+  test('counts credit balances as liabilities, never as assets', () => {
+    const summary = summarizeBalances(accounts);
+
+    expect(summary.totalAssets).toBe(6500);
+    expect(summary.totalLiabilities).toBe(800);
+    expect(summary.netPosition).toBe(5700);
+  });
+
+  test('prefers available balance over current for spendable money', () => {
+    // 1420 available on checking, not 1500 — the difference is already spent.
+    expect(summarizeBalances(accounts).availableToSpend).toBe(6420);
+  });
+
+  test('falls back to current balance when available is missing', () => {
+    expect(
+      summarizeBalances([
+        { accountId: 'a', name: 'Checking', type: 'depository', currentBalance: 300, availableBalance: null },
+      ]).availableToSpend,
+    ).toBe(300);
+  });
+
+  test('handles no accounts', () => {
+    expect(summarizeBalances([])).toEqual({
+      totalAssets: 0,
+      totalLiabilities: 0,
+      netPosition: 0,
+      availableToSpend: 0,
+      accountCount: 0,
+    });
   });
 });

@@ -22,6 +22,8 @@ import {
   hostedLinkSchema,
   linkTokenSchema,
 } from '../routes/plaid.js';
+import { buildPromptSchema } from '../routes/prompt-template.js';
+import { queryVectorDbSchema } from '../routes/query-vector-db.js';
 
 // ---------------------------------------------------------------------------
 // Shared response schemas
@@ -329,6 +331,24 @@ export const disconnectResultSchema = z.object({
 });
 
 export const webhookAckSchema = z.object({ received: z.boolean() });
+
+export const vectorSearchMatchSchema = z.object({
+  id: z.string(),
+  contextDocumentId: z.string(),
+  responseText: z.string(),
+  chunkPosition: z.number().int().nonnegative(),
+  createdAt: z.string(),
+  distance: z.number(),
+});
+
+export const vectorSearchResultSchema = z.object({
+  userId: z.string(),
+  topN: z.number().int().positive(),
+  queryText: z.string(),
+  results: z.array(vectorSearchMatchSchema),
+});
+
+export const promptResultSchema = z.object({ prompt: z.string() });
 
 // ---------------------------------------------------------------------------
 // Examples (normative, from the design document)
@@ -783,6 +803,34 @@ export const OPERATIONS: Operation[] = [
     responses: {
       '204': { description: 'Revoked' },
       '404': error('PUSH_TOKEN_NOT_FOUND'),
+    },
+  },
+  // --- Retrieval and prompts ---
+  {
+    method: 'post',
+    path: '/query-vector-db',
+    operationId: 'queryVectorDb',
+    summary: "Nearest-neighbour search over the user's embedded text",
+    auth: 'user',
+    requestBody: queryVectorDbSchema,
+    responses: {
+      '200': { description: 'Top matches ranked by distance', schema: vectorSearchResultSchema },
+      '400': error('Validation failed'),
+      '401': error('Unauthorized'),
+    },
+  },
+  {
+    method: 'post',
+    path: '/prompt-template/basic/',
+    operationId: 'buildBasicPrompt',
+    summary: 'Render a named prompt template with base intelligence and prompt text',
+    auth: 'user',
+    requestBody: buildPromptSchema,
+    responses: {
+      '200': { description: 'Enriched prompt', schema: promptResultSchema },
+      '400': error('Validation failed'),
+      '401': error('Unauthorized'),
+      '404': error('Prompt template not found'),
     },
   },
 ];

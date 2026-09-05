@@ -159,3 +159,27 @@ export type FactsRecurringStream = {
    */
   dominantRole?: string | null;
 };
+
+/** One Plaid account balance as the facts engine consumes it. */
+export type AccountBalance = {
+  accountId: string;
+  name: string;
+  /** Plaid account type: `depository`, `credit`, `loan`, `investment`, … */
+  type: string;
+  currentBalance: number | null;
+  availableBalance: number | null;
+  /** Optional so legacy callers compile; the facts engine filters on it. */
+  isoCurrencyCode?: string | null;
+};
+
+export type BalanceSummary = {
+  /** Sum of asset accounts. */
+  totalAssets: number;
+  /** Sum of liability balances, as a positive number. */
+  totalLiabilities: number;
+  /** assets − liabilities. */
+  netPosition: number;
+  /** Spendable right now: available balance across depository accounts. */
+  availableToSpend: number;
+  accountCount: number;
+};

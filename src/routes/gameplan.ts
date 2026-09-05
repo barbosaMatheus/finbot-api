@@ -43,7 +43,9 @@ export const headsUpSchema = z.object({
 });
 
 export const reflectionSchema = z.object({
-  kind: z.enum(['got_in_the_way', 'whats_been_hard']),
+  // heads_up here is the context-only path: a line the port could not turn
+  // into an adjustment (or with no model host) is still kept for chat.
+  kind: z.enum(['got_in_the_way', 'whats_been_hard', 'heads_up']),
   text: z.string().trim().min(1).max(1000),
   category: z.string().trim().max(80).nullable().optional(),
   start: isoDate.nullable().optional(),

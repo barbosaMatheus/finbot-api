@@ -583,7 +583,8 @@ export async function applyHeadsUp(
 }
 
 export type ReflectionInput = {
-  kind: 'got_in_the_way' | 'whats_been_hard';
+  /** heads_up: a line kept as context only, when it could not become an adjustment. */
+  kind: 'got_in_the_way' | 'whats_been_hard' | 'heads_up';
   text: string;
   /** Optional explicit attribution; otherwise the port reads it from the text. */
   category?: string | null;
@@ -615,9 +616,9 @@ export async function addReflection(
   const deps: AnchorDeps = { ...(await defaultDeps()), ...depsOverride };
   const today = deps.now().toISOString().slice(0, 10);
 
-  if (input.kind === 'whats_been_hard') {
+  if (input.kind === 'whats_been_hard' || input.kind === 'heads_up') {
     const live = await getLivePeriod(userId, deps.db);
-    const id = await storeReflection(userId, live?.id ?? null, 'whats_been_hard', input.text, null, deps);
+    const id = await storeReflection(userId, live?.id ?? null, input.kind, input.text, null, deps);
     return { id, periodId: live?.id ?? null, kind: input.kind, attribution: null, attributed: null };
   }
 

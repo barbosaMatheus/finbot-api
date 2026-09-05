@@ -252,7 +252,7 @@ export const headsUpResultSchema = z.object({
 export const reflectionResultSchema = z.object({
   id: z.string(),
   periodId: z.string().nullable(),
-  kind: z.enum(['got_in_the_way', 'whats_been_hard']),
+  kind: z.enum(['got_in_the_way', 'whats_been_hard', 'heads_up']),
   attribution: z.enum(['one_off', 'structural']).nullable(),
   attributed: z
     .object({

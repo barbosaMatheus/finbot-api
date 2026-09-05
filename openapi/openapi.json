@@ -14196,7 +14196,8 @@
                       "type": "string",
                       "enum": [
                         "got_in_the_way",
-                        "whats_been_hard"
+                        "whats_been_hard",
+                        "heads_up"
                       ]
                     },
                     "attribution": {
@@ -14302,7 +14303,8 @@
                     "type": "string",
                     "enum": [
                       "got_in_the_way",
-                      "whats_been_hard"
+                      "whats_been_hard",
+                      "heads_up"
                     ]
                   },
                   "text": {

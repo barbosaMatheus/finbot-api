@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { pgVectorSize, pool } from '../db.js';
 import { validateBody } from '../middleware/validate.js';
 import { requireAuth } from '../middleware/require-auth.js';
-import { buildEmbeddingVector } from './embbed-text.js';
+import { buildEmbeddingVector } from '../rag/build-embeddings.js';
 
 const router = Router();
 

@@ -23,13 +23,6 @@ export const ECONOMIC_ROLES = [
 
 export type EconomicRole = (typeof ECONOMIC_ROLES)[number];
 
-/** Roles that represent account movement rather than economic activity. */
-export const MOVEMENT_ROLES: readonly EconomicRole[] = [
-  'internal_transfer',
-  'credit_card_payment',
-  'savings_or_investment_transfer',
-];
-
 export type ClassificationSource =
   | 'pfc'
   | 'account_semantics'

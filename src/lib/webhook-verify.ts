@@ -117,6 +117,3 @@ export async function verifyPlaidWebhook(
     throw new WebhookVerificationError('Body hash mismatch');
   }
 }
-
-/** Exposed for tests. */
-export const __internal = { keyCache };

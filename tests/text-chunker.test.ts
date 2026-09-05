@@ -1,4 +1,4 @@
-import chunkText from "../src/rag/text-chunker";
+import { chunkText } from "../src/rag/text-chunker";
 
 test("chunkText splits text into overlapping chunks using defaults", () => {
     const text =

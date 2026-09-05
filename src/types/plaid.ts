@@ -60,5 +60,3 @@ export type ConnectionHealth = {
   lastSyncedAt: string | null;
   lastErrorCode: string | null;
 };
-
-export type LinkTokenMode = 'add' | 'update';

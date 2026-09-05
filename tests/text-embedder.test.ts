@@ -1,6 +1,4 @@
 import {
-    buildIdfFromCorpus,
-    embedTexts,
     generateNgrams,
     hashStringDJB2,
     textToEmbedding,
@@ -30,12 +28,6 @@ test("textToEmbedding returns correct dimension and normalized", () => {
   expect(Math.abs(norm - 1)).toBeLessThan(1e-6);
 });
 
-test("embedTexts returns multiple embeddings", async () => {
-  const res = await embedTexts(["hello", "world"], 64);
-  expect(res.length).toBe(2);
-  expect(res[0].length).toBe(64);
-});
-
 test("generateNgrams produces expected ngrams", () => {
   const toks = ["a", "b", "c"];
   expect(generateNgrams(toks, 2)).toEqual(["a", "a b", "b", "b c", "c"]);
@@ -45,10 +37,4 @@ test("n-gram option produces different embedding than unigram", () => {
   const v1 = textToEmbedding("the quick brown fox", 64, { nGram: 1 });
   const v2 = textToEmbedding("the quick brown fox", 64, { nGram: 2 });
   expect(v1).not.toEqual(v2);
-});
-
-test("buildIdfFromCorpus computes larger idf for rarer tokens", () => {
-  const corpus = ["a b a", "a b", "c"];
-  const idf = buildIdfFromCorpus(corpus, 1);
-  expect(idf.get("c")! > idf.get("a")!).toBe(true);
 });

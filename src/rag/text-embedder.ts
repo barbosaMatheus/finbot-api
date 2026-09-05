@@ -37,27 +37,6 @@ export function generateNgrams(tokens: string[], maxN = 1): string[] {
   return out;
 }
 
-export function buildIdfFromCorpus(texts: string[], nGram = 1): Map<string, number> {
-  const df = new Map<string, number>();
-  const N = texts.length;
-  for (const t of texts) {
-    const tokens = generateNgrams(tokenize(t), nGram);
-    const seen = new Set<string>();
-    for (const tok of tokens) {
-      if (!seen.has(tok)) {
-        seen.add(tok);
-        df.set(tok, (df.get(tok) || 0) + 1);
-      }
-    }
-  }
-  const idf = new Map<string, number>();
-  for (const [tok, count] of df.entries()) {
-    const v = Math.log((N + 1) / (count + 1)) + 1; // smoothed IDF
-    idf.set(tok, v);
-  }
-  return idf;
-}
-
 /**
  * Convert text to a fixed-length embedding vector of dimension `dim`.
  *
@@ -101,9 +80,3 @@ export function textToEmbedding(
 
   return Array.from(vec);
 }
-
-export async function embedTexts(texts: string[], dim = 768): Promise<number[][]> {
-  return texts.map((t) => textToEmbedding(t, dim));
-}
-
-export default { textToEmbedding, embedTexts, tokenize, hashStringDJB2 };

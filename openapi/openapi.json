@@ -3288,7 +3288,13 @@
                                   "cadence": {
                                     "type": "string"
                                   },
+                                  "cadenceDays": {
+                                    "type": "number"
+                                  },
                                   "averageAmount": {
+                                    "type": "number"
+                                  },
+                                  "lastAmount": {
                                     "type": "number"
                                   },
                                   "monthlyAmount": {
@@ -3296,6 +3302,78 @@
                                   },
                                   "amountVariance": {
                                     "type": "number"
+                                  },
+                                  "amountClass": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string",
+                                        "enum": [
+                                          "fixed",
+                                          "variable",
+                                          "erratic"
+                                        ]
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "planningAmount": {
+                                    "anyOf": [
+                                      {
+                                        "type": "number"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "amountRange": {
+                                    "anyOf": [
+                                      {
+                                        "type": "object",
+                                        "properties": {
+                                          "low": {
+                                            "type": "number"
+                                          },
+                                          "high": {
+                                            "type": "number"
+                                          }
+                                        },
+                                        "required": [
+                                          "low",
+                                          "high"
+                                        ],
+                                        "additionalProperties": false
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "anchorDayOfMonth": {
+                                    "anyOf": [
+                                      {
+                                        "type": "integer",
+                                        "minimum": -9007199254740991,
+                                        "maximum": 9007199254740991
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "dateJitterDays": {
+                                    "anyOf": [
+                                      {
+                                        "type": "integer",
+                                        "minimum": -9007199254740991,
+                                        "maximum": 9007199254740991
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
                                   },
                                   "confidence": {
                                     "type": "string",
@@ -3313,9 +3391,16 @@
                                   "streamKey",
                                   "displayName",
                                   "cadence",
+                                  "cadenceDays",
                                   "averageAmount",
+                                  "lastAmount",
                                   "monthlyAmount",
                                   "amountVariance",
+                                  "amountClass",
+                                  "planningAmount",
+                                  "amountRange",
+                                  "anchorDayOfMonth",
+                                  "dateJitterDays",
                                   "confidence",
                                   "lastDate"
                                 ],
@@ -3401,7 +3486,13 @@
                           "cadence": {
                             "type": "string"
                           },
+                          "cadenceDays": {
+                            "type": "number"
+                          },
                           "averageAmount": {
+                            "type": "number"
+                          },
+                          "lastAmount": {
                             "type": "number"
                           },
                           "monthlyAmount": {
@@ -3409,6 +3500,78 @@
                           },
                           "amountVariance": {
                             "type": "number"
+                          },
+                          "amountClass": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "fixed",
+                                  "variable",
+                                  "erratic"
+                                ]
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "planningAmount": {
+                            "anyOf": [
+                              {
+                                "type": "number"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "amountRange": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "low": {
+                                    "type": "number"
+                                  },
+                                  "high": {
+                                    "type": "number"
+                                  }
+                                },
+                                "required": [
+                                  "low",
+                                  "high"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "anchorDayOfMonth": {
+                            "anyOf": [
+                              {
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "dateJitterDays": {
+                            "anyOf": [
+                              {
+                                "type": "integer",
+                                "minimum": -9007199254740991,
+                                "maximum": 9007199254740991
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
                           },
                           "confidence": {
                             "type": "string",
@@ -3426,9 +3589,16 @@
                           "streamKey",
                           "displayName",
                           "cadence",
+                          "cadenceDays",
                           "averageAmount",
+                          "lastAmount",
                           "monthlyAmount",
                           "amountVariance",
+                          "amountClass",
+                          "planningAmount",
+                          "amountRange",
+                          "anchorDayOfMonth",
+                          "dateJitterDays",
                           "confidence",
                           "lastDate"
                         ],
@@ -3614,7 +3784,7 @@
                     "availableToSpend": 7400
                   },
                   "fullFacts": {
-                    "ruleVersion": "facts-v3",
+                    "ruleVersion": "facts-v4",
                     "period": {
                       "oldestObservedDate": "2026-03-04",
                       "throughDate": "2026-08-24",
@@ -3662,7 +3832,28 @@
                       "accountCount": 4
                     },
                     "recurring": {
-                      "outflows": []
+                      "outflows": [
+                        {
+                          "streamKey": "outflow:city power",
+                          "displayName": "City Power",
+                          "cadence": "monthly",
+                          "cadenceDays": 30.4,
+                          "averageAmount": 118,
+                          "lastAmount": 132,
+                          "monthlyAmount": 118.16,
+                          "amountVariance": 0.21,
+                          "amountClass": "variable",
+                          "planningAmount": 140,
+                          "amountRange": {
+                            "low": 90,
+                            "high": 140
+                          },
+                          "anchorDayOfMonth": 12,
+                          "dateJitterDays": 3,
+                          "confidence": "high",
+                          "lastDate": "2026-08-12"
+                        }
+                      ]
                     },
                     "movement": {
                       "internalTransferTotal": 2500,
@@ -3676,7 +3867,28 @@
                       "unknownShareOfOutflow": 0.02
                     }
                   },
-                  "recurringStreams": [],
+                  "recurringStreams": [
+                    {
+                      "streamKey": "outflow:city power",
+                      "displayName": "City Power",
+                      "cadence": "monthly",
+                      "cadenceDays": 30.4,
+                      "averageAmount": 118,
+                      "lastAmount": 132,
+                      "monthlyAmount": 118.16,
+                      "amountVariance": 0.21,
+                      "amountClass": "variable",
+                      "planningAmount": 140,
+                      "amountRange": {
+                        "low": 90,
+                        "high": 140
+                      },
+                      "anchorDayOfMonth": 12,
+                      "dateJitterDays": 3,
+                      "confidence": "high",
+                      "lastDate": "2026-08-12"
+                    }
+                  ],
                   "incomeStreams": [],
                   "categoryTotals": [],
                   "reviewItems": [

@@ -7,7 +7,14 @@
  * (how complete the records are) is a separate concept stored alongside.
  */
 
-export const FACTS_RULE_VERSION = 'facts-v3';
+export const FACTS_RULE_VERSION = 'facts-v4';
+
+/**
+ * How predictable a recurring stream's amount is, from its relative
+ * variance: fixed (≤ 0.05), variable (≤ 0.50), erratic. A plan reserves
+ * for fixed and variable streams; an erratic one is not a bill.
+ */
+export type AmountClass = 'fixed' | 'variable' | 'erratic';
 
 export type CategoryTotal = {
   bucket: string;
@@ -31,9 +38,21 @@ export type RecurringOutflowFact = {
   streamKey: string;
   displayName: string;
   cadence: string;
+  cadenceDays: number;
   averageAmount: number;
+  lastAmount: number;
   monthlyAmount: number;
   amountVariance: number;
+  /** Null only for a row detected before the planning fields existed. */
+  amountClass: AmountClass | null;
+  /** What a plan sets aside for the next posting; null for erratic streams. */
+  planningAmount: number | null;
+  /** Lowest and highest recent amount — the range the review quotes for a variable bill. */
+  amountRange: { low: number; high: number } | null;
+  /** Median calendar day the stream lands on; monthly and longer cadences only. */
+  anchorDayOfMonth: number | null;
+  /** Half-width of the expected window in days. */
+  dateJitterDays: number | null;
   confidence: 'high' | 'medium' | 'low';
   lastDate: string;
 };
@@ -157,10 +176,21 @@ export type FactsRecurringStream = {
   cadence: string;
   cadenceDays: number;
   averageAmount: number;
+  lastAmount: number;
   amountVariance: number;
   confidence: 'high' | 'medium' | 'low';
   lastDate: string;
   userStatus: 'detected' | 'confirmed' | 'dismissed';
+  /**
+   * Planning fields from recurrence detection (recur-v3). Null on rows the
+   * next detection run has not refreshed yet; never invented here.
+   */
+  anchorDayOfMonth: number | null;
+  dateJitterDays: number | null;
+  amountClass: AmountClass | null;
+  planningAmount: number | null;
+  /** Recent occurrence amounts from the stream's evidence (≤ 24); empty when absent. */
+  amounts: number[];
   /**
    * Dominant economic role of the stream's members. Only 'earned_income'
    * inflow streams may feed the income estimate; null (pre-migration rows)

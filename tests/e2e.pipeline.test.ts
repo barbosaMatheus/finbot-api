@@ -543,12 +543,20 @@ describeIf('end-to-end financial onboarding pipeline (real Postgres)', () => {
       'income_mismatch',
     ]);
 
-    // Netflix shows up as a recurring outflow stream.
-    expect(
-      review.recurringStreams.some(
-        (stream) => stream.displayName.toLowerCase() === 'netflix',
-      ),
-    ).toBe(true);
+    // Netflix shows up as a recurring outflow stream, and the planning
+    // fields written by recurrence (migration 015) round-trip through the
+    // facts read: fixed at the last amount, landing on the 15th.
+    const netflix = review.recurringStreams.find(
+      (stream) => stream.displayName.toLowerCase() === 'netflix',
+    );
+    expect(netflix).toBeDefined();
+    expect(netflix).toMatchObject({
+      amountClass: 'fixed',
+      planningAmount: 15.49,
+      anchorDayOfMonth: 15,
+      amountRange: { low: 15.49, high: 15.49 },
+    });
+    expect(netflix!.dateJitterDays).toBeGreaterThanOrEqual(2);
 
     // --- Confirmation blocked until required items resolve --------------
     await expect(

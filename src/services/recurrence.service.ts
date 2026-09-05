@@ -14,10 +14,14 @@
 import { pool } from '../db.js';
 import type { Queryable } from '../lib/db-types.js';
 import { logger } from '../lib/logger.js';
+import { median, percentile } from '../lib/stats.js';
 import type { UserAnalysisJobPayload } from '../jobs/types.js';
 import type { EconomicRole } from '../types/classification.js';
+import type { AmountClass } from '../types/financial-facts.js';
 
-export const RECURRENCE_RULE_VERSION = 'recur-v2';
+export type { AmountClass };
+
+export const RECURRENCE_RULE_VERSION = 'recur-v3';
 
 /** Roles that can form outgoing recurring streams (bills, subscriptions). */
 const OUTFLOW_STREAM_ROLES: ReadonlySet<EconomicRole> = new Set([
@@ -71,10 +75,33 @@ export type RecurringStream = {
   firstDate: string;
   lastDate: string;
   confidence: 'high' | 'medium' | 'low';
+  /**
+   * Median calendar day the stream lands on, for cadences pinned to the
+   * calendar (monthly and longer). Null for weekly, biweekly and irregular
+   * streams, whose anchor is the gap from the last posting.
+   */
+  anchorDayOfMonth: number | null;
+  /**
+   * Half-width of the expected window in days: the 90th percentile of
+   * |gap − median gap| over the stream's history, floored at 2. An autopay
+   * gets ±2; a bill paid by hand gets whatever its habit shows.
+   */
+  dateJitterDays: number;
+  amountClass: AmountClass;
+  /**
+   * What a plan sets aside for the next posting. Fixed → the last amount (a
+   * rent increase shows there first); variable → the higher of the last
+   * amount and the 75th percentile of recent amounts (reserve for the high
+   * side); erratic → null, not a bill. Null for inflows: a paycheck is not
+   * reserved for, and over-estimating income is the wrong asymmetry.
+   */
+  planningAmount: number | null;
   transactionRowIds: string[];
   evidence: {
     gaps: number[];
     gapRegularity: number;
+    /** Most recent occurrence amounts (oldest first, at most 24), so the planning percentile is replayable. */
+    amounts: number[];
   };
 };
 
@@ -100,12 +127,24 @@ const LONG_CADENCES: ReadonlySet<Cadence> = new Set(['quarterly', 'semiannual', 
 /** Two occurrences form a candidate only when their amounts agree this closely. */
 const SPARSE_AMOUNT_TOLERANCE = 0.1;
 
-function median(values: readonly number[]): number {
-  if (values.length === 0) return 0;
-  const sorted = [...values].sort((a, b) => a - b);
-  const mid = Math.floor(sorted.length / 2);
-  return sorted.length % 2 === 0 ? (sorted[mid - 1]! + sorted[mid]!) / 2 : sorted[mid]!;
-}
+/** Cadences pinned to a calendar day rather than to the gap from the last posting. */
+const CALENDAR_ANCHORED_CADENCES: ReadonlySet<Cadence> = new Set([
+  'monthly',
+  'quarterly',
+  'semiannual',
+  'annual',
+]);
+
+/** Relative variance at or below which a stream's amount is fixed. */
+export const FIXED_AMOUNT_MAX_VARIANCE = 0.05;
+/** Relative variance at or below which a stream's amount is variable; beyond it, erratic. */
+export const VARIABLE_AMOUNT_MAX_VARIANCE = 0.5;
+/** Narrowest window a bill ever gets, even with perfectly regular gaps. */
+export const MIN_DATE_JITTER_DAYS = 2;
+/** How many recent amounts the evidence keeps for the planning percentile. */
+export const EVIDENCE_AMOUNTS_LIMIT = 24;
+const PLANNING_AMOUNT_PERCENTILE = 0.75;
+const DATE_JITTER_PERCENTILE = 0.9;
 
 function parseDay(iso: string): number {
   return Date.parse(`${iso}T00:00:00Z`) / 86_400_000;
@@ -123,6 +162,54 @@ function classifyCadence(medianGap: number): { cadence: Cadence; tolerance: numb
   }
 
   return { cadence: 'irregular', tolerance: 0 };
+}
+
+export function classifyAmount(relativeVariance: number): AmountClass {
+  if (relativeVariance <= FIXED_AMOUNT_MAX_VARIANCE) return 'fixed';
+  if (relativeVariance <= VARIABLE_AMOUNT_MAX_VARIANCE) return 'variable';
+  return 'erratic';
+}
+
+/**
+ * Median day-of-month of a set of dates. A bill pinned to the 1st that
+ * posts on the 31st whenever the 1st falls on a weekend has members on
+ * both sides of the month boundary, and a plain median of [31, 1, 1, 31]
+ * would say the 16th. So the days are also read "unwrapped" — the early
+ * days pushed past 31 — and whichever reading is tighter wins.
+ */
+export function medianDayOfMonth(dates: readonly string[]): number {
+  const days = dates.map((iso) => Number(iso.slice(8, 10)));
+  const unwrapped = days.map((day) => (day <= 15 ? day + 31 : day));
+
+  const spread = (values: number[]): number => Math.max(...values) - Math.min(...values);
+  const chosen = spread(unwrapped) < spread(days) ? unwrapped : days;
+
+  const mid = Math.round(median(chosen));
+  return mid > 31 ? mid - 31 : mid;
+}
+
+/** The 90th percentile of |gap − median gap|, in whole days, floored at 2. */
+export function dateJitterDays(gaps: readonly number[], medianGap: number): number {
+  if (gaps.length === 0) return MIN_DATE_JITTER_DAYS;
+
+  const deviations = gaps.map((gap) => Math.abs(gap - medianGap));
+  return Math.max(MIN_DATE_JITTER_DAYS, Math.ceil(percentile(deviations, DATE_JITTER_PERCENTILE)));
+}
+
+/** Planning amount by class (§10.3 of the gameplan note); null when nothing is reserved. */
+export function planningAmountFor(
+  amountClass: AmountClass,
+  lastAmount: number,
+  recentAmounts: readonly number[],
+): number | null {
+  switch (amountClass) {
+    case 'fixed':
+      return round2(lastAmount);
+    case 'variable':
+      return round2(Math.max(lastAmount, percentile(recentAmounts, PLANNING_AMOUNT_PERCENTILE)));
+    case 'erratic':
+      return null;
+  }
 }
 
 /**
@@ -259,6 +346,15 @@ export function detectRecurringStreams(
       (a, b) => b[1] - a[1] || a[0].localeCompare(b[0]),
     )[0]![0];
 
+    // What a plan needs in order to EXPECT the next posting rather than
+    // know it: where in the calendar it lands, how wide the window is, and
+    // how much to set aside. Classified from the stored (rounded) variance
+    // so the class and the number it was read from always agree.
+    const amountVariance = Math.round(relVariance * 10_000) / 10_000;
+    const lastAmount = round2(amounts[amounts.length - 1]!);
+    const recentAmounts = amounts.slice(-EVIDENCE_AMOUNTS_LIMIT).map(round2);
+    const amountClass = classifyAmount(amountVariance);
+
     streams.push({
       streamKey,
       direction,
@@ -269,15 +365,23 @@ export function detectRecurringStreams(
       cadenceDays: Math.round(medianGap * 100) / 100,
       occurrences: occurrences.length,
       averageAmount: round2(mean),
-      lastAmount: round2(amounts[amounts.length - 1]!),
-      amountVariance: Math.round(relVariance * 10_000) / 10_000,
+      lastAmount,
+      amountVariance,
       firstDate: occurrences[0]!.date,
       lastDate: occurrences[occurrences.length - 1]!.date,
       confidence,
+      anchorDayOfMonth: CALENDAR_ANCHORED_CADENCES.has(cadence)
+        ? medianDayOfMonth(occurrences.map((occ) => occ.date))
+        : null,
+      dateJitterDays: dateJitterDays(gaps, medianGap),
+      amountClass,
+      planningAmount:
+        direction === 'outflow' ? planningAmountFor(amountClass, lastAmount, recentAmounts) : null,
       transactionRowIds: occurrences.flatMap((occ) => occ.rowIds),
       evidence: {
         gaps,
         gapRegularity: Math.round(gapRegularity * 100) / 100,
+        amounts: recentAmounts,
       },
     });
   }
@@ -379,10 +483,12 @@ export async function detectUserRecurring(
          user_id, stream_key, direction, merchant_key, display_name, cadence,
          cadence_days, occurrences, average_amount, last_amount,
          amount_variance, first_date, last_date, confidence,
-         transaction_row_ids, evidence, rule_version, dominant_role
+         transaction_row_ids, evidence, rule_version, dominant_role,
+         anchor_day_of_month, date_jitter_days, amount_class, planning_amount
        )
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::date,
-               $13::date, $14, $15::uuid[], $16::jsonb, $17, $18)
+               $13::date, $14, $15::uuid[], $16::jsonb, $17, $18,
+               $19, $20, $21, $22)
        ON CONFLICT (user_id, stream_key) DO UPDATE SET
          display_name = EXCLUDED.display_name,
          cadence = EXCLUDED.cadence,
@@ -398,6 +504,10 @@ export async function detectUserRecurring(
          evidence = EXCLUDED.evidence,
          rule_version = EXCLUDED.rule_version,
          dominant_role = EXCLUDED.dominant_role,
+         anchor_day_of_month = EXCLUDED.anchor_day_of_month,
+         date_jitter_days = EXCLUDED.date_jitter_days,
+         amount_class = EXCLUDED.amount_class,
+         planning_amount = EXCLUDED.planning_amount,
          updated_at = NOW()`,
       [
         payload.userId,
@@ -418,6 +528,10 @@ export async function detectUserRecurring(
         JSON.stringify(stream.evidence),
         RECURRENCE_RULE_VERSION,
         stream.dominantRole,
+        stream.anchorDayOfMonth,
+        stream.dateJitterDays,
+        stream.amountClass,
+        stream.planningAmount,
       ],
     );
   }

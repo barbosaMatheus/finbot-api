@@ -88,12 +88,23 @@ export type NarrationFallbackReason =
   | 'malformed'
   | 'number_invented';
 
+/**
+ * What the model actually produced, kept for the eval harness even when
+ * the template replaced it: the raw text and every number in it that the
+ * input did not contain. Null when no model was called.
+ */
+export type RawNarration = {
+  text: string;
+  invented: number[];
+};
+
 export type Narration<T> = {
   output: T;
   /** Where the words came from. A template is never wrong, only plain. */
   source: 'model' | 'template';
   model: string | null;
   fallbackReason: NarrationFallbackReason | null;
+  raw: RawNarration | null;
 };
 
 export type ParsedAdjustment = {

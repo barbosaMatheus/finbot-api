@@ -24,6 +24,23 @@ import {
 } from '../routes/plaid.js';
 import { buildPromptSchema } from '../routes/prompt-template.js';
 import { queryVectorDbSchema } from '../routes/query-vector-db.js';
+import {
+  headsUpParseSchema,
+  headsUpSchema,
+  reflectionSchema,
+  settingsSchema,
+  swapSchema,
+} from '../routes/gameplan.js';
+import {
+  anchorResponseSchema,
+  awarenessResultSchema,
+  gotItResultSchema,
+  headsUpParseResultSchema,
+  headsUpResultSchema,
+  planChangeResultSchema,
+  reflectionResultSchema,
+  settingsResultSchema,
+} from './gameplan-schemas.js';
 
 // ---------------------------------------------------------------------------
 // Shared response schemas
@@ -837,6 +854,113 @@ export const OPERATIONS: Operation[] = [
     responses: {
       '204': { description: 'Revoked' },
       '404': error('PUSH_TOKEN_NOT_FOUND'),
+    },
+  },
+  // --- Gameplan (the anchor) ---
+  {
+    method: 'get',
+    path: '/gameplan/anchor',
+    operationId: 'getAnchor',
+    summary: 'The anchor in one read: period, plan with why lines, the last grade, settings',
+    auth: 'user',
+    responses: {
+      '200': { description: 'Anchor', schema: anchorResponseSchema },
+      '401': error('Unauthorized'),
+    },
+  },
+  {
+    method: 'post',
+    path: '/gameplan/anchor/got-it',
+    operationId: 'acknowledgeAnchor',
+    summary: 'Acknowledge the anchor; opens the period',
+    auth: 'user',
+    responses: {
+      '200': { description: 'Opened', schema: gotItResultSchema },
+      '409': error('NO_LIVE_PERIOD'),
+    },
+  },
+  {
+    method: 'post',
+    path: '/gameplan/anchor/swap',
+    operationId: 'swapAnchorTarget',
+    summary: 'Exchange one plan target for one alternate; once per period',
+    auth: 'user',
+    requestBody: swapSchema,
+    responses: {
+      '200': { description: 'Swapped', schema: planChangeResultSchema },
+      '409': error('NO_LIVE_PERIOD or PLAN_NOT_READY or SWAP_ALREADY_USED'),
+      '422': error('INVALID_SWAP'),
+    },
+  },
+  {
+    method: 'post',
+    path: '/gameplan/anchor/heads-up/parse',
+    operationId: 'parseHeadsUp',
+    summary: 'Heads-up step one: the line becomes a proposal; says whether the amount box follows',
+    auth: 'user',
+    requestBody: headsUpParseSchema,
+    responses: {
+      '200': { description: 'Proposal', schema: headsUpParseResultSchema },
+      '409': error('NO_LIVE_PERIOD or PLAN_NOT_READY'),
+    },
+  },
+  {
+    method: 'post',
+    path: '/gameplan/anchor/heads-up',
+    operationId: 'applyHeadsUp',
+    summary: 'Heads-up step two: apply the record with the confirmed amount; the reply explains the diff',
+    auth: 'user',
+    requestBody: headsUpSchema,
+    responses: {
+      '200': { description: 'Applied (or kept as context)', schema: headsUpResultSchema },
+      '409': error('NO_LIVE_PERIOD or PLAN_NOT_READY'),
+      '422': error('INVALID_ADJUSTMENT'),
+    },
+  },
+  {
+    method: 'post',
+    path: '/gameplan/anchor/reflection',
+    operationId: 'addReflection',
+    summary: '"What got in the way?" or "what has been hard?" — stored, embedded, attributed',
+    auth: 'user',
+    requestBody: reflectionSchema,
+    responses: {
+      '201': { description: 'Stored', schema: reflectionResultSchema },
+      '401': error('Unauthorized'),
+    },
+  },
+  {
+    method: 'post',
+    path: '/gameplan/anchor/awareness-done',
+    operationId: 'completeAwareness',
+    summary: 'The awareness target is done',
+    auth: 'user',
+    responses: {
+      '200': { description: 'Recorded', schema: awarenessResultSchema },
+      '409': error('NO_LIVE_PERIOD'),
+    },
+  },
+  {
+    method: 'get',
+    path: '/gameplan/settings',
+    operationId: 'getAnchorSettings',
+    summary: 'Anchor settings: mode, day, time of day',
+    auth: 'user',
+    responses: {
+      '200': { description: 'Settings', schema: settingsResultSchema },
+      '401': error('Unauthorized'),
+    },
+  },
+  {
+    method: 'put',
+    path: '/gameplan/settings',
+    operationId: 'updateAnchorSettings',
+    summary: 'Update anchor settings; effective from the next period',
+    auth: 'user',
+    requestBody: settingsSchema,
+    responses: {
+      '200': { description: 'Updated', schema: settingsResultSchema },
+      '400': error('Validation failed'),
     },
   },
   // --- Retrieval and prompts ---

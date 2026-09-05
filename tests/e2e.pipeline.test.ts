@@ -53,6 +53,13 @@ import {
 import type { GradePeriodJobPayload, UserAnalysisJobPayload } from '../src/jobs/types.js';
 import { withTransaction } from '../src/db.js';
 import { createLlmProvider } from '../src/llm/provider.js';
+import {
+  acknowledgeAnchor,
+  addReflection,
+  applyHeadsUp,
+  getAnchor,
+  swapAnchorTarget,
+} from '../src/services/gameplan-anchor.service.js';
 import { buildGameplan } from '../src/services/gameplan-build.service.js';
 import { gradeGameplanPeriod } from '../src/services/gameplan-grade.service.js';
 import { evaluateNudges } from '../src/services/gameplan-nudge.service.js';
@@ -710,6 +717,58 @@ describeIf('end-to-end financial onboarding pipeline (real Postgres)', () => {
       sent: false,
       skipped: 'nothing_to_say',
     });
+
+    // --- Step 5: the anchor read model and its actions -------------------
+    const anchorDeps = { provider: templateProvider, now: () => NOW };
+    const anchor = await getAnchor(userId, anchorDeps);
+    expect(anchor.status).toBe('ready');
+    expect(anchor.period?.id).toBe(first!.id);
+    expect(anchor.plan?.targets).toHaveLength(3);
+    expect(anchor.plan?.alternates.length).toBeGreaterThan(0);
+    expect(anchor.plan?.shelf.total).toBe(1800);
+    // Nothing posted yet: live free cash is the opening figure.
+    expect(anchor.plan?.live).toMatchObject({ freeCash: anchor.plan!.freeCash.freeCash, postedBills: 0, remainingShelf: 1800 });
+    expect(anchor.previousGrade).toBeNull();
+    expect(anchor.reengage).toBe(false);
+
+    // Swap a non-money target for the first alternate; a second swap is refused.
+    const outgoing = anchor.plan!.targets.find(
+      (target) => target.definition.type !== 'bill_readiness' && target.definition.type !== 'savings_transfer',
+    )!;
+    const incoming = anchor.plan!.alternates[0]!;
+    const swapped = await swapAnchorTarget(userId, { outId: outgoing.id, inId: incoming.id }, anchorDeps);
+    expect(swapped.plan.targets.map((target) => target.id)).toContain(incoming.id);
+    expect(swapped.plan.targets.map((target) => target.id)).not.toContain(outgoing.id);
+    expect(swapped.plan.swapUsed).toBe(true);
+    await expect(swapAnchorTarget(userId, { outId: incoming.id, inId: outgoing.id }, anchorDeps)).rejects.toMatchObject({
+      code: 'SWAP_ALREADY_USED',
+    });
+
+    // A confirmed $100 cost shrinks the transfer; the swap survives the rebuild.
+    const headsUp = await applyHeadsUp(
+      userId,
+      {
+        text: 'car repair, about $100',
+        adjustment: { kind: 'cost', affectedCategory: null, affectedStream: null, timing: null },
+        amount: 100,
+      },
+      anchorDeps,
+    );
+    expect(headsUp).toMatchObject({ outcome: 'applied', applied: true, replySource: 'template' });
+    expect(headsUp.diff.some((entry) => entry.change === 'shrunk')).toBe(true);
+    expect(headsUp.plan.targets.map((target) => target.id)).toContain(incoming.id);
+    expect((await getPeriod(first!.id))?.headsUp.oneTimeCosts).toEqual([{ label: 'car repair, about $100', amount: 100 }]);
+
+    const acknowledged = await acknowledgeAnchor(userId, anchorDeps);
+    expect(acknowledged).toMatchObject({ periodId: first!.id, status: 'open' });
+
+    const reflection = await addReflection(userId, { kind: 'whats_been_hard', text: 'eating out is the hard part' }, anchorDeps);
+    expect(reflection).toMatchObject({ periodId: first!.id, kind: 'whats_been_hard', attribution: null });
+    const { rows: embedded } = await pool.query<{ embedded_at: Date | null }>(
+      `SELECT embedded_at FROM user_reflections WHERE id = $1`,
+      [reflection.id],
+    );
+    expect(embedded[0]?.embedded_at).not.toBeNull();
 
     // --- A routine sync after onboarding: the paycheck of Sep 6 arrives --
     const paydayPage: PlaidSyncClient = {

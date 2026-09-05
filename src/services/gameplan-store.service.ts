@@ -524,6 +524,22 @@ export async function insertRevision(
   return rows[0]!.id;
 }
 
+/** The period's swap, if one was made, so a heads-up rebuild can keep it. */
+export async function getLastSwap(
+  periodId: string,
+  db: Queryable = pool,
+): Promise<{ outId: string; inId: string } | null> {
+  const { rows } = await db.query<{ adjustment: { outId?: unknown; inId?: unknown } | null }>(
+    `SELECT adjustment FROM plan_revisions
+     WHERE period_id = $1 AND kind = 'swap'
+     ORDER BY created_at DESC LIMIT 1`,
+    [periodId],
+  );
+  const raw = rows[0]?.adjustment;
+  if (!raw || typeof raw.outId !== 'string' || typeof raw.inId !== 'string') return null;
+  return { outId: raw.outId, inId: raw.inId };
+}
+
 export async function insertGrade(
   input: {
     periodId: string;

@@ -99,7 +99,7 @@ function onlyOf<T extends string>(allowed: readonly T[], values: unknown): T[] {
   );
 }
 
-function parseObligations(value: unknown): DeclaredObligation[] {
+export function parseObligations(value: unknown): DeclaredObligation[] {
   if (!Array.isArray(value)) {
     return [];
   }

@@ -227,7 +227,9 @@ export const financialFactsSchema = z.object({
       netEconomicSpendMonthly: z.number(),
       debtPaymentsMonthly: z.number(),
       externalCardPaymentsMonthly: z.number(),
+      declaredObligationsMonthly: z.number(),
     }),
+    declaredOneTime: z.object({ total: z.number(), count: z.number().int() }),
   }),
   balances: z.object({
     totalAssets: z.number(),
@@ -290,6 +292,7 @@ export const reviewResponseSchema = z.object({
     monthlyIncomeEstimate: z.number(),
     averageMonthlyEconomicSpend: z.number(),
     averageMonthlyCashObligations: z.number(),
+    declaredObligationsMonthly: z.number(),
     availableToSpend: z.number(),
   }),
   fullFacts: financialFactsSchema,
@@ -401,10 +404,11 @@ export const reviewExample = {
     monthlyIncomeEstimate: 5200,
     averageMonthlyEconomicSpend: 3410,
     averageMonthlyCashObligations: 3890,
+    declaredObligationsMonthly: 0,
     availableToSpend: 7400,
   },
   fullFacts: {
-    ruleVersion: 'facts-v2',
+    ruleVersion: 'facts-v3',
     period: {
       oldestObservedDate: '2026-03-04',
       throughDate: '2026-08-24',
@@ -437,7 +441,9 @@ export const reviewExample = {
         netEconomicSpendMonthly: 3410,
         debtPaymentsMonthly: 0,
         externalCardPaymentsMonthly: 480,
+        declaredObligationsMonthly: 0,
       },
+      declaredOneTime: { total: 0, count: 0 },
     },
     balances: {
       totalAssets: 12400,

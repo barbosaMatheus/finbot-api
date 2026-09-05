@@ -7,7 +7,7 @@
  * (how complete the records are) is a separate concept stored alongside.
  */
 
-export const FACTS_RULE_VERSION = 'facts-v2';
+export const FACTS_RULE_VERSION = 'facts-v3';
 
 export type CategoryTotal = {
   bucket: string;
@@ -82,12 +82,21 @@ export type FinancialFacts = {
     categoryTotals: CategoryTotal[];
   };
   cashObligations: {
+    /** The sum of every component below, declared obligations included. */
     averageMonthlyCashObligations: number;
     components: {
       netEconomicSpendMonthly: number;
       debtPaymentsMonthly: number;
       externalCardPaymentsMonthly: number;
+      /**
+       * Off-book bills the user declared in onboarding (rent to a person, a
+       * family loan, child support…), normalized to a month: monthly as is,
+       * weekly × 52/12. One-time amounts never enter this figure.
+       */
+      declaredObligationsMonthly: number;
     };
+    /** Declared one-time amounts, surfaced whole rather than normalized. */
+    declaredOneTime: { total: number; count: number };
   };
   balances: {
     totalAssets: number;

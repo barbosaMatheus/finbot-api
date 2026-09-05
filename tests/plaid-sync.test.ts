@@ -504,6 +504,8 @@ describe('maybeStartUserAnalysis', () => {
         enqueued.push(p);
         return null;
       },
+      // A confirmed user's sync asks the gameplan for a refresh instead.
+      enqueueRefresh: async () => null,
       // Mirrors production: a confirmed/superseded run is the latest run but
       // never the active one.
       getLatestRun: async () => runSummary,

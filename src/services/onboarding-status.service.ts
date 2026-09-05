@@ -173,17 +173,49 @@ export type ConfirmDeps = {
    * BEGIN/COMMIT; unit tests may omit it to run against their fake db.
    */
   withTransaction?<T>(fn: (tx: Queryable) => Promise<T>): Promise<T>;
+  /**
+   * Runs once after a fresh confirmation commits: the gameplan opens the
+   * user's first period (cadence note §2). Best-effort — confirmation never
+   * fails because of it, and the scheduler opens a period later if needed.
+   */
+  onConfirmed?(userId: string): Promise<void>;
 };
+
+async function openFirstGameplanPeriod(userId: string): Promise<void> {
+  const { openFirstPeriod } = await import('./gameplan-period.service.js');
+  await openFirstPeriod(userId);
+}
 
 export async function confirmFinancialReview(
   userId: string,
   snapshotVersion: number,
   depsOverride?: ConfirmDeps,
 ): Promise<{ onboardingComplete: boolean; alreadyConfirmed: boolean }> {
-  const deps = depsOverride ?? { db: pool, withTransaction };
+  const deps = depsOverride ?? { db: pool, withTransaction, onConfirmed: openFirstGameplanPeriod };
   const runInTransaction =
     deps.withTransaction ?? (async <T,>(fn: (tx: Queryable) => Promise<T>) => fn(deps.db));
 
+  const result = await confirmInTransaction(userId, snapshotVersion, runInTransaction);
+
+  if (!result.alreadyConfirmed && deps.onConfirmed) {
+    try {
+      await deps.onConfirmed(userId);
+    } catch (err) {
+      logger.warn('post-confirmation hook failed; the scheduler will retry', {
+        userId,
+        error: err instanceof Error ? err : String(err),
+      });
+    }
+  }
+
+  return result;
+}
+
+async function confirmInTransaction(
+  userId: string,
+  snapshotVersion: number,
+  runInTransaction: <T>(fn: (tx: Queryable) => Promise<T>) => Promise<T>,
+): Promise<{ onboardingComplete: boolean; alreadyConfirmed: boolean }> {
   // Everything from the status read to the derived-flag write lands (or
   // fails) atomically: a crash mid-confirm can no longer leave the run
   // 'confirmed' while users.on_boarding_complete stays false.

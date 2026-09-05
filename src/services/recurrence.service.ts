@@ -46,6 +46,8 @@ export type RecurrenceInput = {
   date: string;
   pending: boolean;
   role: EconomicRole;
+  /** The classifier's display bucket, when the member is economic spend. */
+  displayBucket?: string | null;
 };
 
 export type Cadence =
@@ -63,6 +65,13 @@ export type RecurringStream = {
   merchantKey: string;
   /** Most frequent economic role among the stream's member transactions. */
   dominantRole: EconomicRole;
+  /**
+   * Most frequent display bucket among the members, or null when none was
+   * classified as spend. The plan uses it to keep a bill stream out of its
+   * bucket's cap average and to let an erratic essential stream join the
+   * floor (§10.3).
+   */
+  dominantBucket: string | null;
   displayName: string;
   cadence: Cadence;
   cadenceDays: number;
@@ -346,6 +355,16 @@ export function detectRecurringStreams(
       (a, b) => b[1] - a[1] || a[0].localeCompare(b[0]),
     )[0]![0];
 
+    const bucketCounts = new Map<string, number>();
+    for (const input of group) {
+      if (input.displayBucket) {
+        bucketCounts.set(input.displayBucket, (bucketCounts.get(input.displayBucket) ?? 0) + 1);
+      }
+    }
+    const dominantBucket =
+      [...bucketCounts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0]?.[0] ??
+      null;
+
     // What a plan needs in order to EXPECT the next posting rather than
     // know it: where in the calendar it lands, how wide the window is, and
     // how much to set aside. Classified from the stored (rounded) variance
@@ -360,6 +379,7 @@ export function detectRecurringStreams(
       direction,
       merchantKey: group[0]!.merchantKey!,
       dominantRole,
+      dominantBucket,
       displayName,
       cadence,
       cadenceDays: Math.round(medianGap * 100) / 100,
@@ -402,7 +422,8 @@ export type RecurrenceDeps = {
   enqueueNextStage(payload: UserAnalysisJobPayload): Promise<unknown>;
 };
 
-async function defaultListInputs(userId: string): Promise<RecurrenceInput[]> {
+/** The detector's default input read; exported so the post-onboarding refresh can run the stage in-process. */
+export async function defaultListInputs(userId: string): Promise<RecurrenceInput[]> {
   const { rows } = await pool.query<{
     row_id: string;
     merchant_normalized: string | null;
@@ -412,6 +433,7 @@ async function defaultListInputs(userId: string): Promise<RecurrenceInput[]> {
     date: string;
     pending: boolean;
     economic_role: EconomicRole;
+    display_bucket: string | null;
   }>(
     `WITH primary_currency AS (
        SELECT t.iso_currency_code AS code
@@ -425,7 +447,7 @@ async function defaultListInputs(userId: string): Promise<RecurrenceInput[]> {
      )
      SELECT t.id AS row_id, t.merchant_normalized, t.merchant_name, t.name,
             t.amount::text AS amount, t.date::text AS date, t.pending,
-            c.economic_role
+            c.economic_role, c.display_bucket
      FROM plaid_transactions t
      JOIN transaction_classifications c ON c.transaction_row_id = t.id
      -- Same active-item filter as the facts read, and only the primary
@@ -446,6 +468,7 @@ async function defaultListInputs(userId: string): Promise<RecurrenceInput[]> {
     date: row.date,
     pending: row.pending,
     role: row.economic_role,
+    displayBucket: row.display_bucket,
   }));
 }
 
@@ -484,11 +507,12 @@ export async function detectUserRecurring(
          cadence_days, occurrences, average_amount, last_amount,
          amount_variance, first_date, last_date, confidence,
          transaction_row_ids, evidence, rule_version, dominant_role,
-         anchor_day_of_month, date_jitter_days, amount_class, planning_amount
+         anchor_day_of_month, date_jitter_days, amount_class, planning_amount,
+         dominant_bucket
        )
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::date,
                $13::date, $14, $15::uuid[], $16::jsonb, $17, $18,
-               $19, $20, $21, $22)
+               $19, $20, $21, $22, $23)
        ON CONFLICT (user_id, stream_key) DO UPDATE SET
          display_name = EXCLUDED.display_name,
          cadence = EXCLUDED.cadence,
@@ -508,6 +532,7 @@ export async function detectUserRecurring(
          date_jitter_days = EXCLUDED.date_jitter_days,
          amount_class = EXCLUDED.amount_class,
          planning_amount = EXCLUDED.planning_amount,
+         dominant_bucket = EXCLUDED.dominant_bucket,
          updated_at = NOW()`,
       [
         payload.userId,
@@ -532,6 +557,7 @@ export async function detectUserRecurring(
         stream.dateJitterDays,
         stream.amountClass,
         stream.planningAmount,
+        stream.dominantBucket,
       ],
     );
   }

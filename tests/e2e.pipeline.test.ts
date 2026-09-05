@@ -50,7 +50,20 @@ import {
   type PlaidSyncClient,
   type SyncDeps,
 } from '../src/services/plaid-sync.service.js';
-import type { UserAnalysisJobPayload } from '../src/jobs/types.js';
+import type { GradePeriodJobPayload, UserAnalysisJobPayload } from '../src/jobs/types.js';
+import { withTransaction } from '../src/db.js';
+import { createLlmProvider } from '../src/llm/provider.js';
+import { buildGameplan } from '../src/services/gameplan-build.service.js';
+import { gradeGameplanPeriod } from '../src/services/gameplan-grade.service.js';
+import { evaluateNudges } from '../src/services/gameplan-nudge.service.js';
+import { openFirstPeriod, runGameplanScheduler } from '../src/services/gameplan-period.service.js';
+import { refreshUserAnalysis } from '../src/services/gameplan-refresh.service.js';
+import {
+  getGrade,
+  getLivePeriod,
+  getPeriod,
+  listTargets,
+} from '../src/services/gameplan-store.service.js';
 
 const NOW = new Date('2026-08-24T12:00:00Z');
 const TODAY = '2026-08-24';
@@ -611,7 +624,22 @@ describeIf('end-to-end financial onboarding pipeline (real Postgres)', () => {
     ).rejects.toMatchObject({ code: 'REVIEW_ITEM_NOT_FOUND' });
 
     // --- Confirm: the only path to completion ---------------------------
-    const confirmation = await confirmFinancialReview(userId, review.snapshotVersion);
+    // Confirmation opens the first gameplan period (cadence note §2); the
+    // clock is pinned so the period's dates are deterministic.
+    const builds: Array<{ userId: string; periodId: string }> = [];
+    const confirmation = await confirmFinancialReview(userId, review.snapshotVersion, {
+      db: pool,
+      withTransaction,
+      onConfirmed: async (uid) => {
+        await openFirstPeriod(uid, {
+          now: () => NOW,
+          enqueueBuild: async (payload) => {
+            builds.push(payload);
+            return null;
+          },
+        });
+      },
+    });
 
     expect(confirmation.onboardingComplete).toBe(true);
 
@@ -627,6 +655,194 @@ describeIf('end-to-end financial onboarding pipeline (real Postgres)', () => {
     // Confirmation is idempotent.
     const again = await confirmFinancialReview(userId, review.snapshotVersion);
     expect(again.alreadyConfirmed).toBe(true);
+
+    // --- Gameplan step 4: the first period, built, then a payday ---------
+    const first = await getLivePeriod(userId);
+    expect(first).not.toBeNull();
+    // Payroll is a stable biweekly stream (last deposit Aug 23), so the
+    // anchor is payday: the period runs from confirmation to the day before
+    // the next expected deposit on Sep 6.
+    expect(first).toMatchObject({
+      trigger: 'first',
+      anchorMode: 'payday',
+      status: 'planned',
+      firstPeriod: true,
+      start: '2026-08-24',
+      end: '2026-09-05',
+      primaryIncomeStreamKey: review.incomeStreams[0]!.streamKey,
+    });
+    expect(builds).toEqual([{ userId, periodId: first!.id }]);
+
+    const templateProvider = createLlmProvider(null);
+    const pushes: string[] = [];
+    const built = await buildGameplan(
+      { userId, periodId: first!.id },
+      {
+        provider: templateProvider,
+        now: () => NOW,
+        sendPush: async (input) => {
+          pushes.push(input.type);
+          return null;
+        },
+      },
+    );
+    expect(built.status).toBe('built');
+    expect(pushes).toEqual(['gameplan_anchor_ready']);
+
+    const targets = await listTargets(first!.id);
+    const planTargets = targets.filter((target) => target.role === 'plan');
+    expect(planTargets).toHaveLength(3);
+    for (const target of planTargets) {
+      expect(target.why).toBeTruthy();
+      expect(target.whySource).toBe('template');
+    }
+    // Rent ($1,800 on the 1st) is the one bill landing in the period.
+    const bills = planTargets.find((target) => target.definition.type === 'bill_readiness')!;
+    expect(bills.definition).toMatchObject({ type: 'bill_readiness', amount: 1800 });
+    expect(planTargets.some((target) => target.definition.type === 'savings_transfer')).toBe(true);
+
+    const stored = await getPeriod(first!.id);
+    expect(stored?.plan?.shelf.total).toBe(1800);
+    expect(stored?.planNarration).toEqual({ source: 'template', fallbackReason: 'no_provider', model: null });
+
+    // Nothing to nudge about yet.
+    expect(await evaluateNudges({ userId }, { now: () => NOW, sendPush: async () => null })).toMatchObject({
+      sent: false,
+      skipped: 'nothing_to_say',
+    });
+
+    // --- A routine sync after onboarding: the paycheck of Sep 6 arrives --
+    const paydayPage: PlaidSyncClient = {
+      async transactionsSync(request) {
+        const added =
+          request.cursor === 'cursor-final'
+            ? [
+                txn('payroll-13', 'acc-checking', '2026-09-06', -2600, {
+                  name: 'ACME CORP DES: PAYROLL',
+                  personal_finance_category: {
+                    primary: 'INCOME',
+                    detailed: 'INCOME_WAGES',
+                    confidence_level: 'VERY_HIGH',
+                  },
+                }),
+              ]
+            : [];
+        return {
+          data: {
+            added,
+            modified: [],
+            removed: [],
+            accounts: fixtureAccounts,
+            next_cursor: 'cursor-payday',
+            has_more: false,
+            transactions_update_status: 'HISTORICAL_UPDATE_COMPLETE',
+          } as never,
+        };
+      },
+    };
+
+    const refreshes: string[] = [];
+    await syncItemTransactions(
+      { plaidItemRowId: itemRowId, userId },
+      {
+        ...syncDeps,
+        plaid: paydayPage,
+        now: () => new Date('2026-09-07T12:00:00Z'),
+        onItemTerminal: async (uid) => {
+          // A finished user's sync never re-runs onboarding; it asks for a refresh.
+          const outcome = await maybeStartUserAnalysis(uid, {
+            enqueueAnalysis: async () => {
+              throw new Error('onboarding must not restart for a confirmed user');
+            },
+            enqueueRefresh: async (payload) => {
+              refreshes.push(payload.userId);
+              return null;
+            },
+            now: () => new Date('2026-09-07T12:00:00Z'),
+          });
+          expect(outcome).toBe('skipped');
+        },
+      },
+    );
+    expect(refreshes).toEqual([userId]);
+
+    const grades: GradePeriodJobPayload[] = [];
+    const refreshed = await refreshUserAnalysis(
+      { userId },
+      {
+        now: () => new Date('2026-09-07T12:00:00Z'),
+        enqueueGrade: async (payload) => {
+          grades.push(payload);
+          return null;
+        },
+        enqueueNudges: async () => null,
+      },
+    );
+    expect(refreshed).toEqual({ status: 'refreshed', paydayDetected: true });
+    expect(grades).toEqual([
+      {
+        userId,
+        periodId: first!.id,
+        kind: 'final',
+        reason: 'payday',
+        paydayDate: '2026-09-06',
+        paydayAmount: 2600,
+      },
+    ]);
+
+    // --- The payday closes the period with a grade and opens the next ----
+    const nextBuilds: string[] = [];
+    const graded = await gradeGameplanPeriod(grades[0]!, {
+      provider: templateProvider,
+      now: () => new Date('2026-09-07T12:00:00Z'),
+      periodDeps: {
+        now: () => new Date('2026-09-07T12:00:00Z'),
+        enqueueBuild: async (payload) => {
+          nextBuilds.push(payload.periodId);
+          return null;
+        },
+      },
+    });
+    expect(graded.status).toBe('graded');
+    expect(graded.nextPeriodId).toBeTruthy();
+
+    const closed = await getPeriod(first!.id);
+    expect(closed).toMatchObject({ status: 'closed', closeReason: 'payday' });
+
+    const finalGrade = await getGrade(first!.id, 'final');
+    expect(finalGrade).not.toBeNull();
+    expect(finalGrade!.grade.results).toHaveLength(3);
+    expect(finalGrade!.lines).toHaveLength(3);
+    expect(finalGrade!.gradedThrough).toBe('2026-09-05');
+    // No transfer happened, so the money-commit was missed and the next pace eases.
+    expect(finalGrade!.grade.moneyCommitOutcome).toBe('missed');
+
+    const next = await getPeriod(graded.nextPeriodId!);
+    expect(next).toMatchObject({
+      trigger: 'payday',
+      anchorMode: 'payday',
+      status: 'planned',
+      start: '2026-09-06',
+      end: '2026-09-19',
+      openingPaycheck: 2600,
+      firstPeriod: false,
+    });
+    expect(nextBuilds).toEqual([next!.id]);
+    expect(await getLivePeriod(userId)).toMatchObject({ id: next!.id });
+
+    // --- The scheduler: the payday fallback fires three days after the end --
+    const scheduled: GradePeriodJobPayload[] = [];
+    const tick = await runGameplanScheduler({
+      now: () => new Date('2026-09-22T20:00:00Z'),
+      enqueueGrade: async (payload) => {
+        scheduled.push(payload as GradePeriodJobPayload);
+        return null;
+      },
+      enqueueBuild: async () => null,
+      sendReminder: async () => null,
+    });
+    expect(tick.finalGrades).toBe(1);
+    expect(scheduled[0]).toMatchObject({ periodId: next!.id, kind: 'final', reason: 'fallback' });
   }, 120_000);
 
   test('concurrent transitions cannot compose a forbidden move (CAS)', async () => {

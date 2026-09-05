@@ -14,6 +14,14 @@ export const JOB = {
   BUILD_FINANCIAL_REVIEW: 'BUILD_FINANCIAL_REVIEW',
   SEND_REVIEW_READY_NOTIFICATION: 'SEND_REVIEW_READY_NOTIFICATION',
   SWEEP_STALE_RUNS: 'SWEEP_STALE_RUNS',
+  // Gameplan (step 4). A finished user's routine syncs re-run
+  // classification, reconciliation and recurrence in one job, then the
+  // payday detector and the nudge evaluator read the result.
+  REFRESH_USER_ANALYSIS: 'REFRESH_USER_ANALYSIS',
+  BUILD_GAMEPLAN: 'BUILD_GAMEPLAN',
+  GRADE_PERIOD: 'GRADE_PERIOD',
+  EVALUATE_NUDGES: 'EVALUATE_NUDGES',
+  RUN_GAMEPLAN_SCHEDULER: 'RUN_GAMEPLAN_SCHEDULER',
 } as const;
 
 export type JobName = (typeof JOB)[keyof typeof JOB];
@@ -32,6 +40,24 @@ export type UserAnalysisJobPayload = {
   analysisRunId: string;
 };
 
+export type UserJobPayload = {
+  userId: string;
+};
+
+export type PeriodJobPayload = {
+  userId: string;
+  periodId: string;
+};
+
+export type GradePeriodJobPayload = PeriodJobPayload & {
+  kind: 'mid_period' | 'final';
+  /** Why a final grade runs now: a detected payday, the anchor day, or the payday fallback. */
+  reason: 'payday' | 'schedule' | 'fallback';
+  /** The posting that opened the next period, when the reason is payday. */
+  paydayDate?: string;
+  paydayAmount?: number;
+};
+
 export type JobPayloads = {
   [JOB.INITIALIZE_ITEM_SYNC]: ItemJobPayload;
   [JOB.SYNC_ITEM_TRANSACTIONS]: ItemJobPayload;
@@ -42,6 +68,11 @@ export type JobPayloads = {
   [JOB.BUILD_FINANCIAL_REVIEW]: UserAnalysisJobPayload;
   [JOB.SEND_REVIEW_READY_NOTIFICATION]: UserAnalysisJobPayload;
   [JOB.SWEEP_STALE_RUNS]: Record<string, never>;
+  [JOB.REFRESH_USER_ANALYSIS]: UserJobPayload;
+  [JOB.BUILD_GAMEPLAN]: PeriodJobPayload;
+  [JOB.GRADE_PERIOD]: GradePeriodJobPayload;
+  [JOB.EVALUATE_NUDGES]: UserJobPayload;
+  [JOB.RUN_GAMEPLAN_SCHEDULER]: Record<string, never>;
 };
 
 export type QueueConfig = {
@@ -85,6 +116,13 @@ export const QUEUE_CONFIG: Record<JobName, QueueConfig> = {
     retryLimit: 1,
     expireInSeconds: 300,
   },
+  [JOB.REFRESH_USER_ANALYSIS]: DEFAULT_QUEUE_CONFIG,
+  [JOB.BUILD_GAMEPLAN]: DEFAULT_QUEUE_CONFIG,
+  [JOB.GRADE_PERIOD]: DEFAULT_QUEUE_CONFIG,
+  // A nudge is only worth sending promptly; the next sync re-evaluates.
+  [JOB.EVALUATE_NUDGES]: { ...DEFAULT_QUEUE_CONFIG, retryLimit: 2, retryDelayMax: 60 },
+  // Hourly tick; the next tick is its own retry.
+  [JOB.RUN_GAMEPLAN_SCHEDULER]: { ...DEFAULT_QUEUE_CONFIG, retryLimit: 1, expireInSeconds: 300 },
 };
 
 export const ALL_JOB_NAMES = Object.values(JOB) as JobName[];

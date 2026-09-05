@@ -191,6 +191,10 @@ export type FactsRecurringStream = {
   planningAmount: number | null;
   /** Recent occurrence amounts from the stream's evidence (≤ 24); empty when absent. */
   amounts: number[];
+  /** Bucket most members were classified into; null for non-spend streams or unrefreshed rows. */
+  dominantBucket?: string | null;
+  /** The normalized merchant the stream groups on; the grade matches postings by it. */
+  merchantKey?: string | null;
   /**
    * Dominant economic role of the stream's members. Only 'earned_income'
    * inflow streams may feed the income estimate; null (pre-migration rows)

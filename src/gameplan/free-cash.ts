@@ -8,7 +8,7 @@
 import { rangesOverlap } from '../lib/dates.js';
 import { isStreamStale } from '../lib/streams.js';
 import type { FactsRecurringStream, FinancialFacts } from '../types/financial-facts.js';
-import { expectedOccurrences, periodLengthDays } from './expected-bills.js';
+import { billBasis, expectedOccurrences, periodLengthDays } from './expected-bills.js';
 import type { BillShelf, FreeCash, IncomeSource, OneTimeCost, Period, ShortlistInput } from './types.js';
 
 export const DAYS_PER_MONTH = 30.44;
@@ -35,8 +35,44 @@ export const NEVER_CAPPED_BUCKETS: ReadonlySet<string> = new Set([
   'Uncategorized',
 ]);
 
+/**
+ * Buckets whose erratic streams are essential spend the plan never cuts —
+ * a utility paid with whatever was left, a recurring pharmacy run. Not the
+ * floor buckets themselves: those are already counted from category totals.
+ */
+export const ESSENTIAL_STREAM_BUCKETS: ReadonlySet<string> = new Set(['Housing & Utilities', 'Medical']);
+
 function round2(value: number): number {
   return Math.round(value * 100) / 100 + 0;
+}
+
+/** A stream's average posting normalized to a month. */
+export function streamMonthlyAmount(amount: number, cadenceDays: number): number {
+  return cadenceDays > 0 ? round2(amount * (DAYS_PER_MONTH / cadenceDays)) : 0;
+}
+
+/**
+ * The bill streams that live in a bucket: what a spend cap on that bucket
+ * leaves out of its base, since the shelf already reserves for them.
+ */
+export function billStreamsInBucket(
+  streams: readonly FactsRecurringStream[],
+  bucket: string,
+  today: string,
+): Array<{ streamKey: string; monthlyAmount: number }> {
+  const bills: Array<{ streamKey: string; monthlyAmount: number }> = [];
+
+  for (const stream of streams) {
+    if (stream.direction !== 'outflow' || stream.dominantBucket !== bucket) continue;
+    if (billBasis(stream) === null || isStreamStale(stream, today)) continue;
+    if (stream.amountClass === 'erratic' || stream.planningAmount === null) continue;
+    bills.push({
+      streamKey: stream.streamKey,
+      monthlyAmount: streamMonthlyAmount(stream.planningAmount, stream.cadenceDays),
+    });
+  }
+
+  return bills;
 }
 
 /** A monthly figure scaled to the period's length. */
@@ -111,11 +147,16 @@ export function incomeInPeriod(input: ShortlistInput): { amount: number; source:
   return estimate > 0 ? { amount: estimate, source: 'estimate' } : { amount: 0, source: 'none' };
 }
 
-/** Essential floor: the historical period average of the essential buckets, never reduced (§2). */
+/**
+ * Essential floor: the historical period average of the essential buckets,
+ * plus erratic streams in essential buckets (§10.3) — never reduced (§2).
+ */
 export function essentialFloor(
   facts: FinancialFacts,
   period: Period,
-): { total: number; buckets: FreeCash['essentialBuckets'] } {
+  streams: readonly FactsRecurringStream[] = [],
+  today: string | null = null,
+): { total: number; buckets: FreeCash['essentialBuckets']; streams: FreeCash['essentialStreams'] } {
   const buckets: FreeCash['essentialBuckets'] = [];
 
   for (const entry of facts.spend.categoryTotals) {
@@ -124,10 +165,28 @@ export function essentialFloor(
     if (periodAverage > 0) buckets.push({ bucket: entry.bucket, periodAverage });
   }
 
-  return {
-    total: round2(buckets.reduce((sum, entry) => sum + entry.periodAverage, 0)),
-    buckets,
-  };
+  const essentialStreams: FreeCash['essentialStreams'] = [];
+
+  for (const stream of streams) {
+    if (stream.direction !== 'outflow' || stream.userStatus === 'dismissed') continue;
+    if (stream.amountClass !== 'erratic') continue;
+    if (!stream.dominantBucket || !ESSENTIAL_STREAM_BUCKETS.has(stream.dominantBucket)) continue;
+    if (today !== null && isStreamStale(stream, today)) continue;
+
+    const periodAverage = scaleMonthlyToPeriod(
+      streamMonthlyAmount(stream.averageAmount, stream.cadenceDays),
+      period,
+    );
+    if (periodAverage > 0) {
+      essentialStreams.push({ streamKey: stream.streamKey, displayName: stream.displayName, periodAverage });
+    }
+  }
+
+  const total =
+    buckets.reduce((sum, entry) => sum + entry.periodAverage, 0) +
+    essentialStreams.reduce((sum, entry) => sum + entry.periodAverage, 0);
+
+  return { total: round2(total), buckets, streams: essentialStreams };
 }
 
 /**
@@ -141,7 +200,7 @@ export function essentialFloor(
 export function computeFreeCash(input: ShortlistInput, shelf: BillShelf): FreeCash {
   const income = incomeInPeriod(input);
   const incomeAmount = round2(Math.max(0, income.amount + (input.incomeAdjustment ?? 0)));
-  const floor = essentialFloor(input.facts, input.period);
+  const floor = essentialFloor(input.facts, input.period, input.streams, input.today);
   const oneTime = round2(sumOneTime(input.oneTimeCosts));
 
   const freeCash = round2(incomeAmount - shelf.total - floor.total - oneTime);
@@ -160,6 +219,7 @@ export function computeFreeCash(input: ShortlistInput, shelf: BillShelf): FreeCa
     shelf: shelf.total,
     essentialFloor: floor.total,
     essentialBuckets: floor.buckets,
+    essentialStreams: floor.streams,
     oneTimeCosts: oneTime,
     freeCash,
     availableBalance,

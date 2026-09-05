@@ -15,7 +15,12 @@ import {
   type SecondaryGoal,
 } from '../types/manual-profile.js';
 import { expectedBills, periodLengthDays } from './expected-bills.js';
-import { NEVER_CAPPED_BUCKETS, computeFreeCash, scaleMonthlyToPeriod } from './free-cash.js';
+import {
+  NEVER_CAPPED_BUCKETS,
+  billStreamsInBucket,
+  computeFreeCash,
+  scaleMonthlyToPeriod,
+} from './free-cash.js';
 import {
   MONEY_COMMIT_TYPES,
   type AwarenessTarget,
@@ -155,7 +160,15 @@ function spendCapCandidates(ctx: GenerationContext): Candidate[] {
   for (const entry of facts.spend.categoryTotals) {
     if (NEVER_CAPPED_BUCKETS.has(entry.bucket)) continue;
 
-    const periodAverage = scaleMonthlyToPeriod(entry.monthlyAverage, period);
+    // The shelf already reserves for the bill streams in this bucket, so
+    // the cap's base is the discretionary remainder and the grade leaves
+    // those postings out.
+    const bucketAverage = scaleMonthlyToPeriod(entry.monthlyAverage, period);
+    const bills = billStreamsInBucket(input.streams, entry.bucket, input.today);
+    const billShare = round2(
+      bills.reduce((sum, bill) => sum + scaleMonthlyToPeriod(bill.monthlyAmount, period), 0),
+    );
+    const periodAverage = round2(Math.max(0, bucketAverage - billShare));
     if (periodAverage < MIN_CAP_PERIOD_AVERAGE) continue;
 
     const reasons: PlanReason[] = [];
@@ -196,6 +209,9 @@ function spendCapCandidates(ctx: GenerationContext): Candidate[] {
         bucket: entry.bucket,
         cap,
         periodAverage,
+        bucketAverage,
+        billShare,
+        excludedBillStreams: bills.map((bill) => bill.streamKey),
         base,
         reduction,
         sharedAccounts: profile.sharedAccounts,

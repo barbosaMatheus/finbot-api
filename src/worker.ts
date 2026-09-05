@@ -29,6 +29,11 @@ async function main(): Promise<void> {
   // instead of spinning forever (see sweepStaleRuns).
   await boss.schedule(JOB.SWEEP_STALE_RUNS, '*/10 * * * *');
 
+  // Gameplan scheduler: final grades on the anchor day (or the payday
+  // fallback), mid-period grades, missed-anchor reminders, and a first
+  // period for any finished user without one.
+  await boss.schedule(JOB.RUN_GAMEPLAN_SCHEDULER, '5 * * * *');
+
   logger.info('worker started', {
     handlers: registeredJobNames().join(','),
   });

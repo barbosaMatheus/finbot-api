@@ -558,6 +558,8 @@ export async function loadFactsData(
     amount_class: AmountClass | null;
     planning_amount: string | null;
     evidence: unknown;
+    dominant_bucket: string | null;
+    merchant_key: string;
   }>(
     `SELECT stream_key, direction, display_name, cadence,
             cadence_days::text AS cadence_days,
@@ -568,7 +570,7 @@ export async function loadFactsData(
             last_amount::text AS last_amount,
             anchor_day_of_month, date_jitter_days, amount_class,
             planning_amount::text AS planning_amount,
-            evidence
+            evidence, dominant_bucket, merchant_key
      FROM recurring_streams
      WHERE user_id = $1`,
     [userId],
@@ -620,6 +622,8 @@ export async function loadFactsData(
       amountClass: row.amount_class,
       planningAmount: row.planning_amount === null ? null : Number(row.planning_amount),
       amounts: parseEvidenceAmounts(row.evidence),
+      dominantBucket: row.dominant_bucket,
+      merchantKey: row.merchant_key,
     })),
   };
 }

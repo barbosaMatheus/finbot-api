@@ -46,6 +46,29 @@ describe('computeFreeCash (§2, decision 2)', () => {
     expect(floor.buckets.some((entry) => entry.bucket === 'Housing & Utilities')).toBe(false);
   });
 
+  test('an erratic stream in an essential bucket joins the floor (§10.3)', () => {
+    // Water paid with whatever was left: not a bill, but not optional either.
+    const water = stream({
+      streamKey: 'outflow:water co',
+      displayName: 'Water Co',
+      averageAmount: 60,
+      lastAmount: 90,
+      amountVariance: 0.7,
+      amountClass: 'erratic',
+      planningAmount: null,
+      dominantBucket: 'Housing & Utilities',
+      lastDate: '2026-09-12',
+    });
+    const floor = essentialFloor(samInput().facts, SAM_PERIOD, [...samInput().streams, water], '2026-09-25');
+
+    expect(floor.streams).toEqual([{ streamKey: 'outflow:water co', displayName: 'Water Co', periodAverage: 27.63 }]);
+    expect(floor.total).toBe(307.63);
+
+    // Stale, dismissed, or in a discretionary bucket: not essential.
+    expect(essentialFloor(samInput().facts, SAM_PERIOD, [{ ...water, lastDate: '2026-06-01' }], '2026-09-25').streams).toEqual([]);
+    expect(essentialFloor(samInput().facts, SAM_PERIOD, [{ ...water, dominantBucket: 'Shopping' }], '2026-09-25').streams).toEqual([]);
+  });
+
   test('a negative cash check makes the period tight even when the flow figure is fine', () => {
     // Overdrawn the day after payday: $900 in the bank against a $1,472 shelf.
     const input = inputFixture({ facts: { ...samInput().facts, balances: { ...samInput().facts.balances, availableToSpend: 900 } } });

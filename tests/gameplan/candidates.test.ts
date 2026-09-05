@@ -256,6 +256,36 @@ describe('what the last grade changes (§5)', () => {
   });
 });
 
+describe('bill streams inside a capped bucket (§10.3 follow-through)', () => {
+  test('the shelf already reserves for Netflix, so the Entertainment cap is set on the rest', () => {
+    const netflix = {
+      ...samInput().streams.find((s) => s.streamKey === 'outflow:netflix')!,
+      dominantBucket: 'Entertainment',
+    };
+    const input = inputFixture({
+      streams: [...samInput().streams.filter((s) => s.streamKey !== 'outflow:netflix'), netflix],
+      facts: facts({
+        categoryTotals: [...samInput().facts.spend.categoryTotals.filter((c) => c.bucket !== 'Entertainment'), category('Entertainment', monthlyForPeriod(57))],
+      }),
+    });
+    const cap = buildShortlist(input).candidates.find(
+      (candidate) => candidate.definition.type === 'spend_cap' && candidate.definition.bucket === 'Entertainment',
+    )!;
+
+    // 15.49 a month scales to $7.13 over 14 days; the base is $57 − $7.13.
+    expect(cap.definition).toMatchObject({
+      bucketAverage: 57,
+      billShare: 7.13,
+      periodAverage: 49.87,
+      cap: 40,
+      excludedBillStreams: ['outflow:netflix'],
+    });
+    // Sam's own plan is untouched: no stream carries a bucket there.
+    const sam = buildShortlist(samInput()).plan.find((c) => c.definition.type === 'spend_cap')!.definition;
+    expect(sam).toMatchObject({ periodAverage: 170, bucketAverage: 170, billShare: 0, excludedBillStreams: [] });
+  });
+});
+
 describe('diversity and swaps', () => {
   test('three of one type never make a plan: with no bills, the third slot changes type', () => {
     const input = inputFixture({

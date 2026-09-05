@@ -121,6 +121,8 @@ export type FreeCash = {
   shelf: number;
   essentialFloor: number;
   essentialBuckets: Array<{ bucket: string; periodAverage: number }>;
+  /** Erratic streams in essential buckets that join the floor (§10.3). */
+  essentialStreams: Array<{ streamKey: string; displayName: string; periodAverage: number }>;
   oneTimeCosts: number;
   freeCash: number;
   availableBalance: number | null;
@@ -168,8 +170,17 @@ export type SpendCapTarget = {
   type: 'spend_cap';
   bucket: string;
   cap: number;
-  /** Historical spend in this bucket scaled to the period. */
+  /**
+   * Historical discretionary spend in this bucket scaled to the period:
+   * the bucket average less the bill streams that live in it.
+   */
   periodAverage: number;
+  /** The bucket's whole period average, bills included. */
+  bucketAverage: number;
+  /** Period-scaled planning amounts of the bill streams left out of the base. */
+  billShare: number;
+  /** Stream keys whose postings the grade leaves out of the bucket's spend. */
+  excludedBillStreams: string[];
   /** The base the cap was cut from: the average, or last period's observed spend after a structural miss (§5). */
   base: number;
   reduction: number;

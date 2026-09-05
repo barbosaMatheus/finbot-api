@@ -421,6 +421,21 @@ describe('planning fields', () => {
     expect(stream).toMatchObject({ amountClass: 'variable', planningAmount: 39 });
   });
 
+  test('a stream carries the bucket most of its members were classified into', () => {
+    const netflix = series({ merchantKey: 'netflix', amount: 15.49, displayBucket: 'Entertainment' }, 30, 6);
+    const mixed = series({ merchantKey: 'amazon', amount: 40 }, 30, 6).map((item, index) => ({
+      ...item,
+      displayBucket: index < 4 ? 'Shopping' : 'Home',
+    }));
+    const untagged = series({ merchantKey: 'landlord', amount: 1200, role: 'unknown_outflow' }, 30, 6);
+
+    const streams = detectRecurringStreams([...netflix, ...mixed, ...untagged]);
+
+    expect(streams.find((s) => s.merchantKey === 'netflix')?.dominantBucket).toBe('Entertainment');
+    expect(streams.find((s) => s.merchantKey === 'amazon')?.dominantBucket).toBe('Shopping');
+    expect(streams.find((s) => s.merchantKey === 'landlord')?.dominantBucket).toBeNull();
+  });
+
   test('helpers: class boundaries, jitter floor, planning by class, day-of-month median', () => {
     expect(classifyAmount(0)).toBe('fixed');
     expect(classifyAmount(0.05)).toBe('fixed');
@@ -493,8 +508,8 @@ describe('detectUserRecurring job', () => {
     expect(upserts[0]![1]).toBe('outflow:netflix');
     // Six postings 30 days apart ending Aug 20: days 23 22 22 21 21 20 →
     // anchor 22, jitter floor 2, fixed at the last amount.
-    expect(upserts[0]).toHaveLength(22);
-    expect(upserts[0]!.slice(18)).toEqual([22, 2, 'fixed', 15.49]);
+    expect(upserts[0]).toHaveLength(23);
+    expect(upserts[0]!.slice(18)).toEqual([22, 2, 'fixed', 15.49, null]);
     expect(prunes[0]![1]).toEqual(['outflow:netflix']);
     expect(chained).toEqual([{ userId: 'user-1', analysisRunId: 'run-1' }]);
   });

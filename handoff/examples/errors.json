@@ -1,0 +1,74 @@
+{
+  "analysisNotReviewable": {
+    "status": 409,
+    "body": {
+      "error": "Financial analysis is not reviewable yet",
+      "code": "ANALYSIS_NOT_REVIEWABLE"
+    },
+    "clientBehavior": "Route to the waiting screen and poll /onboarding/status."
+  },
+  "reviewItemsUnresolved": {
+    "status": 409,
+    "body": {
+      "error": "Required review items are still unresolved",
+      "code": "REVIEW_ITEMS_UNRESOLVED"
+    },
+    "clientBehavior": "Highlight the open required items; confirm stays disabled."
+  },
+  "reviewVersionStale": {
+    "status": 409,
+    "body": {
+      "error": "The review changed since you loaded it; refresh to continue",
+      "code": "REVIEW_VERSION_STALE"
+    },
+    "clientBehavior": "Refetch GET /onboarding/financial-review and re-render."
+  },
+  "recomputeInProgress": {
+    "status": 409,
+    "body": {
+      "error": "The review cannot be corrected right now",
+      "code": "RECOMPUTE_IN_PROGRESS"
+    },
+    "clientBehavior": "Show the recomputing state; retain the user's pending edits."
+  },
+  "invalidCorrectionScope": {
+    "status": 422,
+    "body": {
+      "error": "Action \"dismiss_stream\" is not available for this item",
+      "code": "INVALID_CORRECTION_SCOPE"
+    },
+    "clientBehavior": "Preserve the form and surface the API message."
+  },
+  "retryAlreadyQueued": {
+    "status": 202,
+    "body": {
+      "status": "already_running",
+      "code": "RETRY_ALREADY_QUEUED"
+    },
+    "clientBehavior": "Continue status polling; no user-facing error."
+  },
+  "retryNotAvailable": {
+    "status": 409,
+    "body": {
+      "error": "There is nothing to retry",
+      "code": "RETRY_NOT_AVAILABLE"
+    },
+    "clientBehavior": "Refetch status; the failure already resolved."
+  },
+  "noLinkedInstitution": {
+    "status": 409,
+    "body": {
+      "error": "Connect at least one institution before continuing",
+      "code": "NO_LINKED_INSTITUTION"
+    },
+    "clientBehavior": "Keep the user on the linking step."
+  },
+  "validationFailed": {
+    "status": 400,
+    "body": {
+      "error": "Validation failed",
+      "details": { "monthlyTakeHomeIncome": ["Expected number"] }
+    },
+    "clientBehavior": "Map field errors onto the form."
+  }
+}

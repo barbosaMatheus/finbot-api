@@ -63,7 +63,10 @@ describe('POST /plaid/link-token', () => {
 
     const response = await request(app).post('/plaid/link-token');
 
-    expect(mockedCreateLinkToken).toHaveBeenCalledWith('user-1');
+    expect(mockedCreateLinkToken).toHaveBeenCalledWith('user-1', {
+      mode: undefined,
+      itemRowId: undefined,
+    });
     expect(response.status).toBe(200);
     expect(response.body).toEqual({
       linkToken: 'link-sandbox-1',

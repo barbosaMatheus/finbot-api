@@ -6,10 +6,13 @@
   "scripts": {
     "test": "jest --passWithNoTests",
     "dev": "tsx watch src/server.ts",
+    "worker": "tsx watch src/worker.ts",
+    "start:worker": "node dist/worker.js",
     "build": "tsc -p tsconfig.json",
     "postbuild": "node -e \"require('node:fs').cpSync('src/db/migrations','dist/db/migrations',{recursive:true})\"",
     "start": "node dist/server.js",
-    "seed:db": "tsx src/db/seed-database.ts"
+    "seed:db": "tsx src/db/seed-database.ts",
+    "openapi:generate": "tsx src/openapi/generate.ts --write"
   },
   "dependencies": {
     "@scalar/express-api-reference": "^0.10.16",
@@ -21,6 +24,7 @@
     "helmet": "^8.0.0",
     "jose": "^6.2.3",
     "pg": "^8.22.0",
+    "pg-boss": "^12.28.0",
     "plaid": "^45.0.0",
     "zod": "^4.4.3",
     "zod-openapi": "^6.0.1"

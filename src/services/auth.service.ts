@@ -14,6 +14,7 @@ type UserRow = {
   id: string;
   email: string;
   password_hash: string;
+  on_boarding_complete: boolean;
 };
 
 type SessionRow = {
@@ -24,10 +25,13 @@ type SessionRow = {
   revoked_at: Date | null;
 };
 
-function toAuthUser(row: Pick<UserRow, 'id' | 'email'>): AuthUser {
+function toAuthUser(
+  row: Pick<UserRow, 'id' | 'email' | 'on_boarding_complete'>,
+): AuthUser {
   return {
     id: row.id,
     email: row.email,
+    onboardingComplete: row.on_boarding_complete,
   };
 }
 
@@ -74,7 +78,7 @@ export async function registerUser(
     const { rows } = await pool.query<UserRow>(
       `INSERT INTO users (email, password_hash)
        VALUES ($1, $2)
-       RETURNING id, email, password_hash`,
+       RETURNING id, email, password_hash, on_boarding_complete`,
       [normalizedEmail, passwordHash],
     );
 
@@ -102,7 +106,7 @@ export async function loginUser(
   const normalizedEmail = email.trim().toLowerCase();
 
   const { rows } = await pool.query<UserRow>(
-    `SELECT id, email, password_hash
+    `SELECT id, email, password_hash, on_boarding_complete
      FROM users
      WHERE email = $1`,
     [normalizedEmail],
@@ -152,7 +156,7 @@ export async function refreshSession(refreshToken: string): Promise<AuthResult> 
   }
 
   const { rows: userRows } = await pool.query<UserRow>(
-    `SELECT id, email, password_hash
+    `SELECT id, email, password_hash, on_boarding_complete
      FROM users
      WHERE id = $1`,
     [session.user_id],

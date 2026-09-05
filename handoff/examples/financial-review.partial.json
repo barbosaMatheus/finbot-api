@@ -1,0 +1,105 @@
+{
+  "reviewId": "5fd0bb04-1826-4444-887d-95974853f623",
+  "analysisRunId": "5b910c92-1890-4dce-8912-0e496d4091a4",
+  "snapshotVersion": 3,
+  "status": "needs_confirmation",
+  "period": {
+    "requestedDays": 180,
+    "oldestObservedDate": "2026-03-04",
+    "throughDate": "2026-08-24"
+  },
+  "coverage": {
+    "band": "partial",
+    "reasons": [
+      {
+        "code": "UNLINKED_CARD_PAYMENT",
+        "message": "Payments to an unlinked card represent 18% of observed cash outflow."
+      }
+    ]
+  },
+  "coverageDetail": {},
+  "facts": {
+    "monthlyIncomeEstimate": 5200,
+    "averageMonthlyEconomicSpend": 3410,
+    "averageMonthlyCashObligations": 3890,
+    "availableToSpend": 7400
+  },
+  "fullFacts": {
+    "ruleVersion": "facts-v1",
+    "period": {
+      "oldestObservedDate": "2026-03-04",
+      "throughDate": "2026-08-24",
+      "observedDays": 174,
+      "normalizationMonths": 5.72
+    },
+    "currency": {
+      "primary": "USD",
+      "excludedTransactionCount": 0,
+      "excludedCurrencies": []
+    },
+    "income": {
+      "monthlyIncomeEstimate": 5200,
+      "estimateSource": "recurring_streams",
+      "totalObservedIncome": 29700,
+      "incomeStreams": []
+    },
+    "spend": {
+      "averageMonthlyEconomicSpend": 3410,
+      "grossEconomicSpend": 19800,
+      "refundsAndCredits": 290,
+      "netEconomicSpend": 19510,
+      "categoryTotals": []
+    },
+    "cashObligations": {
+      "averageMonthlyCashObligations": 3890,
+      "components": {
+        "netEconomicSpendMonthly": 3410,
+        "debtPaymentsMonthly": 0,
+        "externalCardPaymentsMonthly": 480
+      }
+    },
+    "balances": {
+      "totalAssets": 12400,
+      "totalLiabilities": 2100,
+      "netPosition": 10300,
+      "availableToSpend": 7400,
+      "accountCount": 4
+    },
+    "recurring": {
+      "outflows": []
+    },
+    "movement": {
+      "internalTransferTotal": 2500,
+      "linkedCardPaymentTotal": 4100,
+      "savingsTransferTotal": 1200,
+      "externalCardPaymentTotal": 2750
+    },
+    "unknowns": {
+      "unknownOutflowTotal": 420,
+      "unknownInflowTotal": 130,
+      "unknownShareOfOutflow": 0.02
+    }
+  },
+  "recurringStreams": [],
+  "incomeStreams": [],
+  "categoryTotals": [],
+  "reviewItems": [
+    {
+      "id": "7df09f9d-80f6-4a36-af60-66c768d57917",
+      "itemKey": "external_card_payment",
+      "type": "external_card_payment_unattributed",
+      "required": true,
+      "status": "open",
+      "evidence": {
+        "description": "AUTOPAY CARD PAYMENT",
+        "averageMonthlyAmount": 820
+      },
+      "proposedValue": null,
+      "confirmedValue": null,
+      "allowedActions": [
+        "connect_account",
+        "accept_coverage_limitation"
+      ]
+    }
+  ]
+}

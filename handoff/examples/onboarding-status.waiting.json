@@ -1,0 +1,33 @@
+{
+  "phase": "waiting_for_history",
+  "gates": {
+    "hasLinkedInstitution": true,
+    "linkingDeclaredComplete": true,
+    "manualProfileComplete": true,
+    "analysisReviewable": false,
+    "financialReviewConfirmed": false
+  },
+  "analysis": {
+    "runId": "5b910c92-1890-4dce-8912-0e496d4091a4",
+    "status": "waiting_for_history",
+    "requestedLookbackDays": 180,
+    "institutions": {
+      "total": 2,
+      "ready": 1,
+      "limited": 0,
+      "failed": 0,
+      "pending": 1
+    },
+    "startedAt": "2026-08-24T20:00:00Z",
+    "reviewReadyAt": null,
+    "retryAllowed": false,
+    "errorCode": null
+  },
+  "availableActions": [
+    "view_waiting",
+    "manage_connections",
+    "manage_notifications",
+    "logout"
+  ],
+  "onboardingComplete": false
+}

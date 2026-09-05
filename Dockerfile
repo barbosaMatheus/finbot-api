@@ -40,6 +40,8 @@ ENV NODE_ENV=production
 COPY --chown=node:node package.json package-lock.json ./
 COPY --from=build --chown=node:node /app/node_modules ./node_modules
 COPY --from=build --chown=node:node /app/dist ./dist
+# Published API contract served at /openapi.json.
+COPY --chown=node:node openapi ./openapi
 USER node
 EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \

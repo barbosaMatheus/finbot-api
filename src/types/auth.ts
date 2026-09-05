@@ -1,6 +1,8 @@
 export type AuthUser = {
   id: string;
   email: string;
+  /** Derived final onboarding gate; clients still route from /onboarding/status. */
+  onboardingComplete: boolean;
 };
 
 export class AuthError extends Error {

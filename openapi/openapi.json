@@ -1,0 +1,4332 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "FinBot API",
+    "description": "Financial onboarding and transaction analysis. Generated from the route Zod schemas; regenerate with `npm run openapi:generate`.",
+    "version": "1.0.0"
+  },
+  "servers": [
+    {
+      "url": "http://localhost:3000",
+      "description": "Local development"
+    }
+  ],
+  "paths": {
+    "/auth/register": {
+      "post": {
+        "operationId": "registerWeb",
+        "summary": "Create an account; sets HttpOnly session cookies",
+        "responses": {
+          "201": {
+            "description": "Account created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "user": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "email": {
+                          "type": "string"
+                        },
+                        "onboardingComplete": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "email",
+                        "onboardingComplete"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "user"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Email already registered",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "details": {
+                      "type": "object",
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "email": {
+                    "type": "string",
+                    "format": "email",
+                    "pattern": "^(?!\\.)(?!.*\\.\\.)([A-Za-z0-9_'+\\-\\.]*)[A-Za-z0-9_+-]@([A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$"
+                  },
+                  "password": {
+                    "type": "string",
+                    "minLength": 8
+                  }
+                },
+                "required": [
+                  "email",
+                  "password"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/login": {
+      "post": {
+        "operationId": "loginWeb",
+        "summary": "Log in; sets HttpOnly session cookies",
+        "responses": {
+          "200": {
+            "description": "Logged in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "user": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "email": {
+                          "type": "string"
+                        },
+                        "onboardingComplete": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "email",
+                        "onboardingComplete"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "user"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid email or password",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "details": {
+                      "type": "object",
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "email": {
+                    "type": "string",
+                    "format": "email",
+                    "pattern": "^(?!\\.)(?!.*\\.\\.)([A-Za-z0-9_'+\\-\\.]*)[A-Za-z0-9_+-]@([A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$"
+                  },
+                  "password": {
+                    "type": "string",
+                    "minLength": 8
+                  }
+                },
+                "required": [
+                  "email",
+                  "password"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/refresh": {
+      "post": {
+        "operationId": "refreshWeb",
+        "summary": "Rotate the cookie session",
+        "responses": {
+          "200": {
+            "description": "Session rotated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "user": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "email": {
+                          "type": "string"
+                        },
+                        "onboardingComplete": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "email",
+                        "onboardingComplete"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "user"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid refresh token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "details": {
+                      "type": "object",
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/logout": {
+      "post": {
+        "operationId": "logoutWeb",
+        "summary": "Revoke the cookie session",
+        "responses": {
+          "204": {
+            "description": "Logged out"
+          }
+        }
+      }
+    },
+    "/auth/native/register": {
+      "post": {
+        "operationId": "registerNative",
+        "summary": "Create an account; returns Bearer + rotating refresh tokens",
+        "responses": {
+          "201": {
+            "description": "Account created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "user": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "email": {
+                          "type": "string"
+                        },
+                        "onboardingComplete": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "email",
+                        "onboardingComplete"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "accessToken": {
+                      "type": "string"
+                    },
+                    "refreshToken": {
+                      "type": "string"
+                    },
+                    "refreshExpiresInSeconds": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    }
+                  },
+                  "required": [
+                    "user",
+                    "accessToken",
+                    "refreshToken",
+                    "refreshExpiresInSeconds"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Email already registered",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "details": {
+                      "type": "object",
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "email": {
+                    "type": "string",
+                    "format": "email",
+                    "pattern": "^(?!\\.)(?!.*\\.\\.)([A-Za-z0-9_'+\\-\\.]*)[A-Za-z0-9_+-]@([A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$"
+                  },
+                  "password": {
+                    "type": "string",
+                    "minLength": 8
+                  }
+                },
+                "required": [
+                  "email",
+                  "password"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/native/login": {
+      "post": {
+        "operationId": "loginNative",
+        "summary": "Log in; returns Bearer + rotating refresh tokens",
+        "responses": {
+          "200": {
+            "description": "Logged in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "user": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "email": {
+                          "type": "string"
+                        },
+                        "onboardingComplete": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "email",
+                        "onboardingComplete"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "accessToken": {
+                      "type": "string"
+                    },
+                    "refreshToken": {
+                      "type": "string"
+                    },
+                    "refreshExpiresInSeconds": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    }
+                  },
+                  "required": [
+                    "user",
+                    "accessToken",
+                    "refreshToken",
+                    "refreshExpiresInSeconds"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid email or password",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "details": {
+                      "type": "object",
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "email": {
+                    "type": "string",
+                    "format": "email",
+                    "pattern": "^(?!\\.)(?!.*\\.\\.)([A-Za-z0-9_'+\\-\\.]*)[A-Za-z0-9_+-]@([A-Za-z0-9][A-Za-z0-9\\-]*\\.)+[A-Za-z]{2,}$"
+                  },
+                  "password": {
+                    "type": "string",
+                    "minLength": 8
+                  }
+                },
+                "required": [
+                  "email",
+                  "password"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/native/refresh": {
+      "post": {
+        "operationId": "refreshNative",
+        "summary": "Rotate a native refresh token (single use)",
+        "responses": {
+          "200": {
+            "description": "Session rotated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "user": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "email": {
+                          "type": "string"
+                        },
+                        "onboardingComplete": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "email",
+                        "onboardingComplete"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "accessToken": {
+                      "type": "string"
+                    },
+                    "refreshToken": {
+                      "type": "string"
+                    },
+                    "refreshExpiresInSeconds": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    }
+                  },
+                  "required": [
+                    "user",
+                    "accessToken",
+                    "refreshToken",
+                    "refreshExpiresInSeconds"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid refresh token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "details": {
+                      "type": "object",
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "refreshToken": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "refreshToken"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/native/logout": {
+      "post": {
+        "operationId": "logoutNative",
+        "summary": "Revoke a native refresh session",
+        "responses": {
+          "204": {
+            "description": "Logged out"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "refreshToken": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "refreshToken"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "/plaid/link-token": {
+      "post": {
+        "operationId": "createLinkToken",
+        "summary": "Start an initial, add-institution, or update Link session",
+        "responses": {
+          "200": {
+            "description": "Link token created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "linkToken": {
+                      "type": "string"
+                    },
+                    "expiration": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "hostedLinkUrl": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "linkToken",
+                    "expiration",
+                    "hostedLinkUrl"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "details": {
+                      "type": "object",
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Plaid error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "details": {
+                      "type": "object",
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "mode": {
+                    "type": "string",
+                    "enum": [
+                      "add",
+                      "update"
+                    ]
+                  },
+                  "itemId": {
+                    "type": "string",
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/plaid/exchange-public-token": {
+      "post": {
+        "operationId": "exchangePublicToken",
+        "summary": "Persist one linked Item (duplicates detected) and start its sync",
+        "responses": {
+          "201": {
+            "description": "Connection persisted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "connection": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "itemId": {
+                          "type": "string"
+                        },
+                        "institutionId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "institutionName": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "status": {
+                          "type": "string"
+                        },
+                        "createdAt": {
+                          "type": "string"
+                        },
+                        "accounts": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "accountId": {
+                                "type": "string"
+                              },
+                              "name": {
+                                "type": "string"
+                              },
+                              "officialName": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "mask": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "type": {
+                                "type": "string"
+                              },
+                              "subtype": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "currentBalance": {
+                                "anyOf": [
+                                  {
+                                    "type": "number"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "availableBalance": {
+                                "anyOf": [
+                                  {
+                                    "type": "number"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "isoCurrencyCode": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              }
+                            },
+                            "required": [
+                              "accountId",
+                              "name",
+                              "officialName",
+                              "mask",
+                              "type",
+                              "subtype",
+                              "currentBalance",
+                              "availableBalance",
+                              "isoCurrencyCode"
+                            ],
+                            "additionalProperties": false
+                          }
+                        },
+                        "health": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "syncStatus": {
+                                  "type": "string",
+                                  "enum": [
+                                    "pending",
+                                    "syncing",
+                                    "complete",
+                                    "failed"
+                                  ]
+                                },
+                                "updateStatus": {
+                                  "type": "string"
+                                },
+                                "oldestTransactionDate": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "lastSyncedAt": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "lastErrorCode": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "syncStatus",
+                                "updateStatus",
+                                "oldestTransactionDate",
+                                "lastSyncedAt",
+                                "lastErrorCode"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "duplicate": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "itemId",
+                        "institutionId",
+                        "institutionName",
+                        "status",
+                        "createdAt",
+                        "accounts"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "connection"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "details": {
+                      "type": "object",
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Plaid error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "details": {
+                      "type": "object",
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "publicToken": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "publicToken"
+                ]
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/plaid/hosted-link/complete": {
+      "post": {
+        "operationId": "completeHostedLink",
+        "summary": "Poll a Hosted Link session until it finishes (web fallback)",
+        "responses": {
+          "200": {
+            "description": "Session state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "status": {
+                          "type": "string",
+                          "const": "pending"
+                        }
+                      },
+                      "required": [
+                        "status"
+                      ],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "status": {
+                          "type": "string",
+                          "const": "connected"
+                        },
+                        "connection": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string"
+                            },
+                            "itemId": {
+                              "type": "string"
+                            },
+                            "institutionId": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "institutionName": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "status": {
+                              "type": "string"
+                            },
+                            "createdAt": {
+                              "type": "string"
+                            },
+                            "accounts": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "accountId": {
+                                    "type": "string"
+                                  },
+                                  "name": {
+                                    "type": "string"
+                                  },
+                                  "officialName": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "mask": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "type": {
+                                    "type": "string"
+                                  },
+                                  "subtype": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "currentBalance": {
+                                    "anyOf": [
+                                      {
+                                        "type": "number"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "availableBalance": {
+                                    "anyOf": [
+                                      {
+                                        "type": "number"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "isoCurrencyCode": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "accountId",
+                                  "name",
+                                  "officialName",
+                                  "mask",
+                                  "type",
+                                  "subtype",
+                                  "currentBalance",
+                                  "availableBalance",
+                                  "isoCurrencyCode"
+                                ],
+                                "additionalProperties": false
+                              }
+                            },
+                            "health": {
+                              "anyOf": [
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "syncStatus": {
+                                      "type": "string",
+                                      "enum": [
+                                        "pending",
+                                        "syncing",
+                                        "complete",
+                                        "failed"
+                                      ]
+                                    },
+                                    "updateStatus": {
+                                      "type": "string"
+                                    },
+                                    "oldestTransactionDate": {
+                                      "anyOf": [
+                                        {
+                                          "type": "string"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "lastSyncedAt": {
+                                      "anyOf": [
+                                        {
+                                          "type": "string"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    },
+                                    "lastErrorCode": {
+                                      "anyOf": [
+                                        {
+                                          "type": "string"
+                                        },
+                                        {
+                                          "type": "null"
+                                        }
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "syncStatus",
+                                    "updateStatus",
+                                    "oldestTransactionDate",
+                                    "lastSyncedAt",
+                                    "lastErrorCode"
+                                  ],
+                                  "additionalProperties": false
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "duplicate": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "itemId",
+                            "institutionId",
+                            "institutionName",
+                            "status",
+                            "createdAt",
+                            "accounts"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "required": [
+                        "status",
+                        "connection"
+                      ],
+                      "additionalProperties": false
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "details": {
+                      "type": "object",
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "linkToken": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "linkToken"
+                ]
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/plaid/connections": {
+      "get": {
+        "operationId": "listConnections",
+        "summary": "All linked Items with accounts and sync health",
+        "responses": {
+          "200": {
+            "description": "Connections",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "connections": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "itemId": {
+                            "type": "string"
+                          },
+                          "institutionId": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "institutionName": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "status": {
+                            "type": "string"
+                          },
+                          "createdAt": {
+                            "type": "string"
+                          },
+                          "accounts": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "accountId": {
+                                  "type": "string"
+                                },
+                                "name": {
+                                  "type": "string"
+                                },
+                                "officialName": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "mask": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "type": {
+                                  "type": "string"
+                                },
+                                "subtype": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "currentBalance": {
+                                  "anyOf": [
+                                    {
+                                      "type": "number"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "availableBalance": {
+                                  "anyOf": [
+                                    {
+                                      "type": "number"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "isoCurrencyCode": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string"
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                }
+                              },
+                              "required": [
+                                "accountId",
+                                "name",
+                                "officialName",
+                                "mask",
+                                "type",
+                                "subtype",
+                                "currentBalance",
+                                "availableBalance",
+                                "isoCurrencyCode"
+                              ],
+                              "additionalProperties": false
+                            }
+                          },
+                          "health": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "syncStatus": {
+                                    "type": "string",
+                                    "enum": [
+                                      "pending",
+                                      "syncing",
+                                      "complete",
+                                      "failed"
+                                    ]
+                                  },
+                                  "updateStatus": {
+                                    "type": "string"
+                                  },
+                                  "oldestTransactionDate": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "lastSyncedAt": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  },
+                                  "lastErrorCode": {
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "syncStatus",
+                                  "updateStatus",
+                                  "oldestTransactionDate",
+                                  "lastSyncedAt",
+                                  "lastErrorCode"
+                                ],
+                                "additionalProperties": false
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "duplicate": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "itemId",
+                          "institutionId",
+                          "institutionName",
+                          "status",
+                          "createdAt",
+                          "accounts"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "connections"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "details": {
+                      "type": "object",
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/plaid/connections/{itemId}": {
+      "delete": {
+        "operationId": "disconnectItem",
+        "summary": "Disconnect one institution and rebuild dependent analysis",
+        "responses": {
+          "200": {
+            "description": "Disconnected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "recomputeQueued": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "recomputeQueued"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Connection not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "details": {
+                      "type": "object",
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "itemId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/plaid/webhook": {
+      "post": {
+        "operationId": "plaidWebhook",
+        "summary": "Plaid server-to-server webhook (signature verified)",
+        "responses": {
+          "200": {
+            "description": "Recorded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "received": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "received"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Verification failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "details": {
+                      "type": "object",
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        },
+        "x-authentication": "Plaid webhook signature (Plaid-Verification header)"
+      }
+    },
+    "/onboarding/manual": {
+      "put": {
+        "operationId": "saveManualOnboarding",
+        "summary": "Save manual answers; completes the manual gate only",
+        "responses": {
+          "200": {
+            "description": "Saved"
+          },
+          "400": {
+            "description": "Validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "details": {
+                      "type": "object",
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "details": {
+                      "type": "object",
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "firstName": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 60
+                  },
+                  "dependentsCount": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 20
+                  },
+                  "sharedAccounts": {
+                    "type": "boolean"
+                  },
+                  "incomePattern": {
+                    "type": "string",
+                    "enum": [
+                      "steady",
+                      "varies",
+                      "unpredictable",
+                      "none"
+                    ]
+                  },
+                  "declaredObligations": {
+                    "maxItems": 20,
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "enum": [
+                            "rent_to_person",
+                            "family_loan",
+                            "medical_plan",
+                            "child_support",
+                            "owe_friend",
+                            "other"
+                          ]
+                        },
+                        "label": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "maxLength": 80
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "amount": {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 1000000
+                        },
+                        "cadence": {
+                          "type": "string",
+                          "enum": [
+                            "monthly",
+                            "weekly",
+                            "one_time"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "kind",
+                        "label",
+                        "amount",
+                        "cadence"
+                      ]
+                    }
+                  },
+                  "upcomingEvents": {
+                    "maxItems": 8,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "enum": [
+                        "moving",
+                        "wedding",
+                        "new_baby",
+                        "car",
+                        "tuition",
+                        "big_trip",
+                        "medical",
+                        "other"
+                      ]
+                    }
+                  },
+                  "upcomingEventNote": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 120
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "primaryGoal": {
+                    "type": "string",
+                    "enum": [
+                      "stop_overspending",
+                      "pay_down_debt",
+                      "build_cushion",
+                      "save_for_specific",
+                      "understand_spending",
+                      "not_sure"
+                    ]
+                  },
+                  "secondaryGoals": {
+                    "maxItems": 2,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "enum": [
+                        "stop_overspending",
+                        "pay_down_debt",
+                        "build_cushion",
+                        "save_for_specific",
+                        "understand_spending"
+                      ]
+                    }
+                  },
+                  "goalDetail": {
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "description": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 120
+                          },
+                          "targetAmount": {
+                            "anyOf": [
+                              {
+                                "type": "number",
+                                "minimum": 0,
+                                "maximum": 1000000
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "targetMonth": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "pattern": "^\\d{4}-(0[1-9]|1[0-2])$"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "description",
+                          "targetAmount",
+                          "targetMonth"
+                        ]
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "coachingPace": {
+                    "type": "string",
+                    "enum": [
+                      "ease_in",
+                      "balanced",
+                      "push"
+                    ]
+                  },
+                  "additionalContext": {
+                    "type": "string",
+                    "maxLength": 2000
+                  }
+                },
+                "required": [
+                  "firstName",
+                  "dependentsCount",
+                  "sharedAccounts",
+                  "incomePattern",
+                  "declaredObligations",
+                  "upcomingEvents",
+                  "upcomingEventNote",
+                  "primaryGoal",
+                  "secondaryGoals",
+                  "goalDetail",
+                  "coachingPace",
+                  "additionalContext"
+                ]
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
+      "get": {
+        "operationId": "getManualOnboarding",
+        "summary": "Resume saved manual answers",
+        "responses": {
+          "200": {
+            "description": "Saved answers or null",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "saved": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "payload": {
+                              "type": "object",
+                              "properties": {
+                                "firstName": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 60
+                                },
+                                "dependentsCount": {
+                                  "type": "integer",
+                                  "minimum": 0,
+                                  "maximum": 20
+                                },
+                                "sharedAccounts": {
+                                  "type": "boolean"
+                                },
+                                "incomePattern": {
+                                  "type": "string",
+                                  "enum": [
+                                    "steady",
+                                    "varies",
+                                    "unpredictable",
+                                    "none"
+                                  ]
+                                },
+                                "declaredObligations": {
+                                  "maxItems": 20,
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "properties": {
+                                      "kind": {
+                                        "type": "string",
+                                        "enum": [
+                                          "rent_to_person",
+                                          "family_loan",
+                                          "medical_plan",
+                                          "child_support",
+                                          "owe_friend",
+                                          "other"
+                                        ]
+                                      },
+                                      "label": {
+                                        "anyOf": [
+                                          {
+                                            "type": "string",
+                                            "maxLength": 80
+                                          },
+                                          {
+                                            "type": "null"
+                                          }
+                                        ]
+                                      },
+                                      "amount": {
+                                        "type": "number",
+                                        "minimum": 0,
+                                        "maximum": 1000000
+                                      },
+                                      "cadence": {
+                                        "type": "string",
+                                        "enum": [
+                                          "monthly",
+                                          "weekly",
+                                          "one_time"
+                                        ]
+                                      }
+                                    },
+                                    "required": [
+                                      "kind",
+                                      "label",
+                                      "amount",
+                                      "cadence"
+                                    ],
+                                    "additionalProperties": false
+                                  }
+                                },
+                                "upcomingEvents": {
+                                  "maxItems": 8,
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string",
+                                    "enum": [
+                                      "moving",
+                                      "wedding",
+                                      "new_baby",
+                                      "car",
+                                      "tuition",
+                                      "big_trip",
+                                      "medical",
+                                      "other"
+                                    ]
+                                  }
+                                },
+                                "upcomingEventNote": {
+                                  "anyOf": [
+                                    {
+                                      "type": "string",
+                                      "maxLength": 120
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "primaryGoal": {
+                                  "type": "string",
+                                  "enum": [
+                                    "stop_overspending",
+                                    "pay_down_debt",
+                                    "build_cushion",
+                                    "save_for_specific",
+                                    "understand_spending",
+                                    "not_sure"
+                                  ]
+                                },
+                                "secondaryGoals": {
+                                  "maxItems": 2,
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string",
+                                    "enum": [
+                                      "stop_overspending",
+                                      "pay_down_debt",
+                                      "build_cushion",
+                                      "save_for_specific",
+                                      "understand_spending"
+                                    ]
+                                  }
+                                },
+                                "goalDetail": {
+                                  "anyOf": [
+                                    {
+                                      "type": "object",
+                                      "properties": {
+                                        "description": {
+                                          "type": "string",
+                                          "minLength": 1,
+                                          "maxLength": 120
+                                        },
+                                        "targetAmount": {
+                                          "anyOf": [
+                                            {
+                                              "type": "number",
+                                              "minimum": 0,
+                                              "maximum": 1000000
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        },
+                                        "targetMonth": {
+                                          "anyOf": [
+                                            {
+                                              "type": "string",
+                                              "pattern": "^\\d{4}-(0[1-9]|1[0-2])$"
+                                            },
+                                            {
+                                              "type": "null"
+                                            }
+                                          ]
+                                        }
+                                      },
+                                      "required": [
+                                        "description",
+                                        "targetAmount",
+                                        "targetMonth"
+                                      ],
+                                      "additionalProperties": false
+                                    },
+                                    {
+                                      "type": "null"
+                                    }
+                                  ]
+                                },
+                                "coachingPace": {
+                                  "type": "string",
+                                  "enum": [
+                                    "ease_in",
+                                    "balanced",
+                                    "push"
+                                  ]
+                                },
+                                "additionalContext": {
+                                  "type": "string",
+                                  "maxLength": 2000
+                                }
+                              },
+                              "required": [
+                                "firstName",
+                                "dependentsCount",
+                                "sharedAccounts",
+                                "incomePattern",
+                                "declaredObligations",
+                                "upcomingEvents",
+                                "upcomingEventNote",
+                                "primaryGoal",
+                                "secondaryGoals",
+                                "goalDetail",
+                                "coachingPace",
+                                "additionalContext"
+                              ],
+                              "additionalProperties": false
+                            },
+                            "updatedAt": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "payload",
+                            "updatedAt"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "saved"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "details": {
+                      "type": "object",
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/onboarding/status": {
+      "get": {
+        "operationId": "getOnboardingStatus",
+        "summary": "Gates, phase, institution progress, and available actions",
+        "responses": {
+          "200": {
+            "description": "Status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "phase": {
+                      "type": "string",
+                      "enum": [
+                        "financial_linking",
+                        "manual_profile_in_progress",
+                        "waiting_for_history",
+                        "classifying",
+                        "review_ready",
+                        "recomputing",
+                        "failed_retryable",
+                        "complete"
+                      ]
+                    },
+                    "gates": {
+                      "type": "object",
+                      "properties": {
+                        "hasLinkedInstitution": {
+                          "type": "boolean"
+                        },
+                        "linkingDeclaredComplete": {
+                          "type": "boolean"
+                        },
+                        "manualProfileComplete": {
+                          "type": "boolean"
+                        },
+                        "analysisReviewable": {
+                          "type": "boolean"
+                        },
+                        "financialReviewConfirmed": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "hasLinkedInstitution",
+                        "linkingDeclaredComplete",
+                        "manualProfileComplete",
+                        "analysisReviewable",
+                        "financialReviewConfirmed"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "analysis": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "runId": {
+                              "type": "string"
+                            },
+                            "status": {
+                              "type": "string",
+                              "enum": [
+                                "waiting_for_history",
+                                "processing",
+                                "review_ready",
+                                "recomputing",
+                                "confirmed",
+                                "failed",
+                                "superseded"
+                              ]
+                            },
+                            "requestedLookbackDays": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "institutions": {
+                              "type": "object",
+                              "properties": {
+                                "total": {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                },
+                                "ready": {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                },
+                                "limited": {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                },
+                                "failed": {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                },
+                                "pending": {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                }
+                              },
+                              "required": [
+                                "total",
+                                "ready",
+                                "limited",
+                                "failed",
+                                "pending"
+                              ],
+                              "additionalProperties": false
+                            },
+                            "startedAt": {
+                              "type": "string"
+                            },
+                            "reviewReadyAt": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "retryAllowed": {
+                              "type": "boolean"
+                            },
+                            "errorCode": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "runId",
+                            "status",
+                            "requestedLookbackDays",
+                            "institutions",
+                            "startedAt",
+                            "reviewReadyAt",
+                            "retryAllowed",
+                            "errorCode"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "availableActions": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "onboardingComplete": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "phase",
+                    "gates",
+                    "analysis",
+                    "availableActions",
+                    "onboardingComplete"
+                  ],
+                  "additionalProperties": false
+                },
+                "example": {
+                  "phase": "waiting_for_history",
+                  "gates": {
+                    "hasLinkedInstitution": true,
+                    "linkingDeclaredComplete": true,
+                    "manualProfileComplete": true,
+                    "analysisReviewable": false,
+                    "financialReviewConfirmed": false
+                  },
+                  "analysis": {
+                    "runId": "5b910c92-1890-4dce-8912-0e496d4091a4",
+                    "status": "waiting_for_history",
+                    "requestedLookbackDays": 180,
+                    "institutions": {
+                      "total": 2,
+                      "ready": 1,
+                      "limited": 0,
+                      "failed": 0,
+                      "pending": 1
+                    },
+                    "startedAt": "2026-08-24T20:00:00Z",
+                    "reviewReadyAt": null,
+                    "retryAllowed": false,
+                    "errorCode": null
+                  },
+                  "availableActions": [
+                    "view_waiting",
+                    "manage_connections",
+                    "manage_notifications",
+                    "logout"
+                  ],
+                  "onboardingComplete": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "details": {
+                      "type": "object",
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/onboarding/linking-complete": {
+      "post": {
+        "operationId": "declareLinkingComplete",
+        "summary": "Declare account linking done; creates/advances the analysis run",
+        "responses": {
+          "200": {
+            "description": "Updated status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "phase": {
+                      "type": "string",
+                      "enum": [
+                        "financial_linking",
+                        "manual_profile_in_progress",
+                        "waiting_for_history",
+                        "classifying",
+                        "review_ready",
+                        "recomputing",
+                        "failed_retryable",
+                        "complete"
+                      ]
+                    },
+                    "gates": {
+                      "type": "object",
+                      "properties": {
+                        "hasLinkedInstitution": {
+                          "type": "boolean"
+                        },
+                        "linkingDeclaredComplete": {
+                          "type": "boolean"
+                        },
+                        "manualProfileComplete": {
+                          "type": "boolean"
+                        },
+                        "analysisReviewable": {
+                          "type": "boolean"
+                        },
+                        "financialReviewConfirmed": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "hasLinkedInstitution",
+                        "linkingDeclaredComplete",
+                        "manualProfileComplete",
+                        "analysisReviewable",
+                        "financialReviewConfirmed"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "analysis": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "runId": {
+                              "type": "string"
+                            },
+                            "status": {
+                              "type": "string",
+                              "enum": [
+                                "waiting_for_history",
+                                "processing",
+                                "review_ready",
+                                "recomputing",
+                                "confirmed",
+                                "failed",
+                                "superseded"
+                              ]
+                            },
+                            "requestedLookbackDays": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "institutions": {
+                              "type": "object",
+                              "properties": {
+                                "total": {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                },
+                                "ready": {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                },
+                                "limited": {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                },
+                                "failed": {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                },
+                                "pending": {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                }
+                              },
+                              "required": [
+                                "total",
+                                "ready",
+                                "limited",
+                                "failed",
+                                "pending"
+                              ],
+                              "additionalProperties": false
+                            },
+                            "startedAt": {
+                              "type": "string"
+                            },
+                            "reviewReadyAt": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "retryAllowed": {
+                              "type": "boolean"
+                            },
+                            "errorCode": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "runId",
+                            "status",
+                            "requestedLookbackDays",
+                            "institutions",
+                            "startedAt",
+                            "reviewReadyAt",
+                            "retryAllowed",
+                            "errorCode"
+                          ],
+                          "additionalProperties": false
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "availableActions": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "onboardingComplete": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "phase",
+                    "gates",
+                    "analysis",
+                    "availableActions",
+                    "onboardingComplete"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "No linked institution",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "details": {
+                      "type": "object",
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/onboarding/financial-review": {
+      "get": {
+        "operationId": "getFinancialReview",
+        "summary": "Latest review snapshot: facts, coverage, actionable exceptions",
+        "responses": {
+          "200": {
+            "description": "Review snapshot",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "reviewId": {
+                      "type": "string"
+                    },
+                    "analysisRunId": {
+                      "type": "string"
+                    },
+                    "snapshotVersion": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "needs_confirmation",
+                        "recomputing",
+                        "confirmed"
+                      ]
+                    },
+                    "period": {
+                      "type": "object",
+                      "properties": {
+                        "requestedDays": {
+                          "type": "integer",
+                          "minimum": -9007199254740991,
+                          "maximum": 9007199254740991
+                        },
+                        "oldestObservedDate": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "throughDate": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "requestedDays",
+                        "oldestObservedDate",
+                        "throughDate"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "coverage": {
+                      "type": "object",
+                      "properties": {
+                        "band": {
+                          "type": "string",
+                          "enum": [
+                            "complete",
+                            "partial",
+                            "insufficient"
+                          ]
+                        },
+                        "reasons": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "code": {
+                                "type": "string"
+                              },
+                              "message": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "code",
+                              "message"
+                            ],
+                            "additionalProperties": false
+                          }
+                        }
+                      },
+                      "required": [
+                        "band",
+                        "reasons"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "coverageDetail": {
+                      "type": "object",
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "additionalProperties": {}
+                    },
+                    "facts": {
+                      "type": "object",
+                      "properties": {
+                        "monthlyIncomeEstimate": {
+                          "type": "number"
+                        },
+                        "averageMonthlyEconomicSpend": {
+                          "type": "number"
+                        },
+                        "averageMonthlyCashObligations": {
+                          "type": "number"
+                        },
+                        "availableToSpend": {
+                          "type": "number"
+                        }
+                      },
+                      "required": [
+                        "monthlyIncomeEstimate",
+                        "averageMonthlyEconomicSpend",
+                        "averageMonthlyCashObligations",
+                        "availableToSpend"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "fullFacts": {
+                      "type": "object",
+                      "properties": {
+                        "ruleVersion": {
+                          "type": "string"
+                        },
+                        "period": {
+                          "type": "object",
+                          "properties": {
+                            "oldestObservedDate": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "throughDate": {
+                              "type": "string"
+                            },
+                            "observedDays": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "spendWindowDays": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "spendWindowStart": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "normalizationMonths": {
+                              "type": "number"
+                            }
+                          },
+                          "required": [
+                            "oldestObservedDate",
+                            "throughDate",
+                            "observedDays",
+                            "spendWindowDays",
+                            "spendWindowStart",
+                            "normalizationMonths"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "currency": {
+                          "type": "object",
+                          "properties": {
+                            "primary": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "excludedTransactionCount": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            },
+                            "excludedCurrencies": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            }
+                          },
+                          "required": [
+                            "primary",
+                            "excludedTransactionCount",
+                            "excludedCurrencies"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "income": {
+                          "type": "object",
+                          "properties": {
+                            "monthlyIncomeEstimate": {
+                              "type": "number"
+                            },
+                            "estimateSource": {
+                              "type": "string",
+                              "enum": [
+                                "recurring_streams",
+                                "observed_average",
+                                "none"
+                              ]
+                            },
+                            "totalObservedIncome": {
+                              "type": "number"
+                            },
+                            "incomeStreams": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "streamKey": {
+                                    "type": "string"
+                                  },
+                                  "displayName": {
+                                    "type": "string"
+                                  },
+                                  "cadence": {
+                                    "type": "string"
+                                  },
+                                  "monthlyAmount": {
+                                    "type": "number"
+                                  },
+                                  "confidence": {
+                                    "type": "string",
+                                    "enum": [
+                                      "high",
+                                      "medium",
+                                      "low"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "streamKey",
+                                  "displayName",
+                                  "cadence",
+                                  "monthlyAmount",
+                                  "confidence"
+                                ],
+                                "additionalProperties": false
+                              }
+                            }
+                          },
+                          "required": [
+                            "monthlyIncomeEstimate",
+                            "estimateSource",
+                            "totalObservedIncome",
+                            "incomeStreams"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "spend": {
+                          "type": "object",
+                          "properties": {
+                            "averageMonthlyEconomicSpend": {
+                              "type": "number"
+                            },
+                            "grossEconomicSpend": {
+                              "type": "number"
+                            },
+                            "refundsAndCredits": {
+                              "type": "number"
+                            },
+                            "netEconomicSpend": {
+                              "type": "number"
+                            },
+                            "categoryTotals": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "bucket": {
+                                    "type": "string"
+                                  },
+                                  "total": {
+                                    "type": "number"
+                                  },
+                                  "monthlyAverage": {
+                                    "type": "number"
+                                  },
+                                  "share": {
+                                    "type": "number"
+                                  },
+                                  "transactionCount": {
+                                    "type": "integer",
+                                    "minimum": -9007199254740991,
+                                    "maximum": 9007199254740991
+                                  }
+                                },
+                                "required": [
+                                  "bucket",
+                                  "total",
+                                  "monthlyAverage",
+                                  "share",
+                                  "transactionCount"
+                                ],
+                                "additionalProperties": false
+                              }
+                            }
+                          },
+                          "required": [
+                            "averageMonthlyEconomicSpend",
+                            "grossEconomicSpend",
+                            "refundsAndCredits",
+                            "netEconomicSpend",
+                            "categoryTotals"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "cashObligations": {
+                          "type": "object",
+                          "properties": {
+                            "averageMonthlyCashObligations": {
+                              "type": "number"
+                            },
+                            "components": {
+                              "type": "object",
+                              "properties": {
+                                "netEconomicSpendMonthly": {
+                                  "type": "number"
+                                },
+                                "debtPaymentsMonthly": {
+                                  "type": "number"
+                                },
+                                "externalCardPaymentsMonthly": {
+                                  "type": "number"
+                                }
+                              },
+                              "required": [
+                                "netEconomicSpendMonthly",
+                                "debtPaymentsMonthly",
+                                "externalCardPaymentsMonthly"
+                              ],
+                              "additionalProperties": false
+                            }
+                          },
+                          "required": [
+                            "averageMonthlyCashObligations",
+                            "components"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "balances": {
+                          "type": "object",
+                          "properties": {
+                            "totalAssets": {
+                              "type": "number"
+                            },
+                            "totalLiabilities": {
+                              "type": "number"
+                            },
+                            "netPosition": {
+                              "type": "number"
+                            },
+                            "availableToSpend": {
+                              "type": "number"
+                            },
+                            "accountCount": {
+                              "type": "integer",
+                              "minimum": -9007199254740991,
+                              "maximum": 9007199254740991
+                            }
+                          },
+                          "required": [
+                            "totalAssets",
+                            "totalLiabilities",
+                            "netPosition",
+                            "availableToSpend",
+                            "accountCount"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "recurring": {
+                          "type": "object",
+                          "properties": {
+                            "outflows": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "streamKey": {
+                                    "type": "string"
+                                  },
+                                  "displayName": {
+                                    "type": "string"
+                                  },
+                                  "cadence": {
+                                    "type": "string"
+                                  },
+                                  "averageAmount": {
+                                    "type": "number"
+                                  },
+                                  "monthlyAmount": {
+                                    "type": "number"
+                                  },
+                                  "amountVariance": {
+                                    "type": "number"
+                                  },
+                                  "confidence": {
+                                    "type": "string",
+                                    "enum": [
+                                      "high",
+                                      "medium",
+                                      "low"
+                                    ]
+                                  },
+                                  "lastDate": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": [
+                                  "streamKey",
+                                  "displayName",
+                                  "cadence",
+                                  "averageAmount",
+                                  "monthlyAmount",
+                                  "amountVariance",
+                                  "confidence",
+                                  "lastDate"
+                                ],
+                                "additionalProperties": false
+                              }
+                            }
+                          },
+                          "required": [
+                            "outflows"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "movement": {
+                          "type": "object",
+                          "properties": {
+                            "internalTransferTotal": {
+                              "type": "number"
+                            },
+                            "linkedCardPaymentTotal": {
+                              "type": "number"
+                            },
+                            "savingsTransferTotal": {
+                              "type": "number"
+                            },
+                            "externalCardPaymentTotal": {
+                              "type": "number"
+                            }
+                          },
+                          "required": [
+                            "internalTransferTotal",
+                            "linkedCardPaymentTotal",
+                            "savingsTransferTotal",
+                            "externalCardPaymentTotal"
+                          ],
+                          "additionalProperties": false
+                        },
+                        "unknowns": {
+                          "type": "object",
+                          "properties": {
+                            "unknownOutflowTotal": {
+                              "type": "number"
+                            },
+                            "unknownInflowTotal": {
+                              "type": "number"
+                            },
+                            "unknownShareOfOutflow": {
+                              "type": "number"
+                            }
+                          },
+                          "required": [
+                            "unknownOutflowTotal",
+                            "unknownInflowTotal",
+                            "unknownShareOfOutflow"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "required": [
+                        "ruleVersion",
+                        "period",
+                        "currency",
+                        "income",
+                        "spend",
+                        "cashObligations",
+                        "balances",
+                        "recurring",
+                        "movement",
+                        "unknowns"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "recurringStreams": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "streamKey": {
+                            "type": "string"
+                          },
+                          "displayName": {
+                            "type": "string"
+                          },
+                          "cadence": {
+                            "type": "string"
+                          },
+                          "averageAmount": {
+                            "type": "number"
+                          },
+                          "monthlyAmount": {
+                            "type": "number"
+                          },
+                          "amountVariance": {
+                            "type": "number"
+                          },
+                          "confidence": {
+                            "type": "string",
+                            "enum": [
+                              "high",
+                              "medium",
+                              "low"
+                            ]
+                          },
+                          "lastDate": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "streamKey",
+                          "displayName",
+                          "cadence",
+                          "averageAmount",
+                          "monthlyAmount",
+                          "amountVariance",
+                          "confidence",
+                          "lastDate"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "incomeStreams": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "streamKey": {
+                            "type": "string"
+                          },
+                          "displayName": {
+                            "type": "string"
+                          },
+                          "cadence": {
+                            "type": "string"
+                          },
+                          "monthlyAmount": {
+                            "type": "number"
+                          },
+                          "confidence": {
+                            "type": "string",
+                            "enum": [
+                              "high",
+                              "medium",
+                              "low"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "streamKey",
+                          "displayName",
+                          "cadence",
+                          "monthlyAmount",
+                          "confidence"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "categoryTotals": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "bucket": {
+                            "type": "string"
+                          },
+                          "total": {
+                            "type": "number"
+                          },
+                          "monthlyAverage": {
+                            "type": "number"
+                          },
+                          "share": {
+                            "type": "number"
+                          },
+                          "transactionCount": {
+                            "type": "integer",
+                            "minimum": -9007199254740991,
+                            "maximum": 9007199254740991
+                          }
+                        },
+                        "required": [
+                          "bucket",
+                          "total",
+                          "monthlyAverage",
+                          "share",
+                          "transactionCount"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "reviewItems": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "itemKey": {
+                            "type": "string"
+                          },
+                          "type": {
+                            "type": "string"
+                          },
+                          "required": {
+                            "type": "boolean"
+                          },
+                          "status": {
+                            "type": "string",
+                            "enum": [
+                              "open",
+                              "resolved",
+                              "accepted",
+                              "dismissed"
+                            ]
+                          },
+                          "evidence": {},
+                          "proposedValue": {
+                            "anyOf": [
+                              {},
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "confirmedValue": {
+                            "anyOf": [
+                              {},
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "allowedActions": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "itemKey",
+                          "type",
+                          "required",
+                          "status",
+                          "evidence",
+                          "proposedValue",
+                          "confirmedValue",
+                          "allowedActions"
+                        ],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": [
+                    "reviewId",
+                    "analysisRunId",
+                    "snapshotVersion",
+                    "status",
+                    "period",
+                    "coverage",
+                    "coverageDetail",
+                    "facts",
+                    "fullFacts",
+                    "recurringStreams",
+                    "incomeStreams",
+                    "categoryTotals",
+                    "reviewItems"
+                  ],
+                  "additionalProperties": false
+                },
+                "example": {
+                  "reviewId": "5fd0bb04-1826-4444-887d-95974853f623",
+                  "analysisRunId": "5b910c92-1890-4dce-8912-0e496d4091a4",
+                  "snapshotVersion": 3,
+                  "status": "needs_confirmation",
+                  "period": {
+                    "requestedDays": 180,
+                    "oldestObservedDate": "2026-03-04",
+                    "throughDate": "2026-08-24"
+                  },
+                  "coverage": {
+                    "band": "partial",
+                    "reasons": [
+                      {
+                        "code": "UNLINKED_CARD_PAYMENT",
+                        "message": "Payments to an unlinked card represent 18% of observed cash outflow."
+                      }
+                    ]
+                  },
+                  "coverageDetail": {},
+                  "facts": {
+                    "monthlyIncomeEstimate": 5200,
+                    "averageMonthlyEconomicSpend": 3410,
+                    "averageMonthlyCashObligations": 3890,
+                    "availableToSpend": 7400
+                  },
+                  "fullFacts": {
+                    "ruleVersion": "facts-v2",
+                    "period": {
+                      "oldestObservedDate": "2026-03-04",
+                      "throughDate": "2026-08-24",
+                      "observedDays": 174,
+                      "spendWindowDays": 174,
+                      "spendWindowStart": "2026-03-04",
+                      "normalizationMonths": 5.72
+                    },
+                    "currency": {
+                      "primary": "USD",
+                      "excludedTransactionCount": 0,
+                      "excludedCurrencies": []
+                    },
+                    "income": {
+                      "monthlyIncomeEstimate": 5200,
+                      "estimateSource": "recurring_streams",
+                      "totalObservedIncome": 29700,
+                      "incomeStreams": []
+                    },
+                    "spend": {
+                      "averageMonthlyEconomicSpend": 3410,
+                      "grossEconomicSpend": 19800,
+                      "refundsAndCredits": 290,
+                      "netEconomicSpend": 19510,
+                      "categoryTotals": []
+                    },
+                    "cashObligations": {
+                      "averageMonthlyCashObligations": 3890,
+                      "components": {
+                        "netEconomicSpendMonthly": 3410,
+                        "debtPaymentsMonthly": 0,
+                        "externalCardPaymentsMonthly": 480
+                      }
+                    },
+                    "balances": {
+                      "totalAssets": 12400,
+                      "totalLiabilities": 2100,
+                      "netPosition": 10300,
+                      "availableToSpend": 7400,
+                      "accountCount": 4
+                    },
+                    "recurring": {
+                      "outflows": []
+                    },
+                    "movement": {
+                      "internalTransferTotal": 2500,
+                      "linkedCardPaymentTotal": 4100,
+                      "savingsTransferTotal": 1200,
+                      "externalCardPaymentTotal": 2750
+                    },
+                    "unknowns": {
+                      "unknownOutflowTotal": 420,
+                      "unknownInflowTotal": 130,
+                      "unknownShareOfOutflow": 0.02
+                    }
+                  },
+                  "recurringStreams": [],
+                  "incomeStreams": [],
+                  "categoryTotals": [],
+                  "reviewItems": [
+                    {
+                      "id": "7df09f9d-80f6-4a36-af60-66c768d57917",
+                      "itemKey": "external_card_payment",
+                      "type": "external_card_payment_unattributed",
+                      "required": true,
+                      "status": "open",
+                      "evidence": {
+                        "description": "AUTOPAY CARD PAYMENT",
+                        "averageMonthlyAmount": 820
+                      },
+                      "proposedValue": null,
+                      "confirmedValue": null,
+                      "allowedActions": [
+                        "connect_account",
+                        "accept_coverage_limitation"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "ANALYSIS_NOT_REVIEWABLE — route to waiting and poll",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "details": {
+                      "type": "object",
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/onboarding/financial-review/items/{id}": {
+      "patch": {
+        "operationId": "correctReviewItem",
+        "summary": "Correct or accept one review item (scoped, audited)",
+        "responses": {
+          "200": {
+            "description": "Applied",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "resolved",
+                        "accepted"
+                      ]
+                    },
+                    "recomputeQueued": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "status",
+                    "recomputeQueued"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "REVIEW_ITEM_NOT_FOUND",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "details": {
+                      "type": "object",
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "REVIEW_VERSION_STALE or RECOMPUTE_IN_PROGRESS",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "details": {
+                      "type": "object",
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "INVALID_CORRECTION_SCOPE",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "details": {
+                      "type": "object",
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "action": {
+                    "type": "string",
+                    "enum": [
+                      "accept_coverage_limitation",
+                      "keep_manual_value",
+                      "use_observed_value",
+                      "set_value",
+                      "confirm_stream",
+                      "dismiss_stream",
+                      "reclassify_transaction",
+                      "reclassify_merchant"
+                    ]
+                  },
+                  "snapshotVersion": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991
+                  },
+                  "value": {
+                    "type": "object",
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "additionalProperties": {}
+                  }
+                },
+                "required": [
+                  "action",
+                  "snapshotVersion"
+                ]
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/onboarding/financial-review/recompute": {
+      "post": {
+        "operationId": "recomputeReview",
+        "summary": "Rebuild facts and review after corrections",
+        "responses": {
+          "202": {
+            "description": "Queued",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "queued",
+                        "already_recomputing"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "status"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "ANALYSIS_NOT_REVIEWABLE",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "details": {
+                      "type": "object",
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/onboarding/financial-review/confirm": {
+      "post": {
+        "operationId": "confirmReview",
+        "summary": "Confirm the latest review; the only path to completion",
+        "responses": {
+          "200": {
+            "description": "Confirmed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "onboardingComplete": {
+                      "type": "boolean"
+                    },
+                    "alreadyConfirmed": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "onboardingComplete",
+                    "alreadyConfirmed"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "REVIEW_VERSION_STALE or REVIEW_ITEMS_UNRESOLVED or ANALYSIS_NOT_REVIEWABLE",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "details": {
+                      "type": "object",
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "snapshotVersion": {
+                    "type": "integer",
+                    "exclusiveMinimum": 0,
+                    "maximum": 9007199254740991
+                  }
+                },
+                "required": [
+                  "snapshotVersion"
+                ]
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/onboarding/retry": {
+      "post": {
+        "operationId": "retryAnalysis",
+        "summary": "Retry a failed analysis phase or failed institution syncs",
+        "responses": {
+          "202": {
+            "description": "Queued or already running",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "retry_queued",
+                        "already_running"
+                      ]
+                    },
+                    "code": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "status"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "RETRY_NOT_AVAILABLE",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "details": {
+                      "type": "object",
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/notifications/push-tokens": {
+      "post": {
+        "operationId": "registerPushToken",
+        "summary": "Register or refresh one Expo push token",
+        "responses": {
+          "201": {
+            "description": "Registered",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "token": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "platform": {
+                          "type": "string"
+                        },
+                        "createdAt": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "platform",
+                        "createdAt"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "token"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "details": {
+                      "type": "object",
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "token": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "platform": {
+                    "type": "string",
+                    "enum": [
+                      "ios",
+                      "android",
+                      "web"
+                    ]
+                  },
+                  "deviceId": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "token",
+                  "platform"
+                ]
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/notifications/push-tokens/{tokenId}": {
+      "delete": {
+        "operationId": "revokePushToken",
+        "summary": "Revoke one push token",
+        "responses": {
+          "204": {
+            "description": "Revoked"
+          },
+          "404": {
+            "description": "PUSH_TOKEN_NOT_FOUND",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "details": {
+                      "type": "object",
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "additionalProperties": {}
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "tokenId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "ErrorEnvelope": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string"
+          },
+          "details": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {}
+          }
+        },
+        "required": [
+          "error"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "securitySchemes": {
+      "cookieAuth": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "finbot_access",
+        "description": "HttpOnly access cookie set by the web auth flow."
+      },
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "description": "Short-lived access token from the native auth flow."
+      }
+    }
+  }
+}

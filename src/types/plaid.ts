@@ -38,6 +38,10 @@ export type PlaidConnection = {
   status: string;
   createdAt: string;
   accounts: PlaidAccountSummary[];
+  /** Present when the caller asked for health (connections listing). */
+  health?: ConnectionHealth | null;
+  /** True when this exchange matched an already-linked institution. */
+  duplicate?: boolean;
 };
 
 /**
@@ -47,3 +51,14 @@ export type PlaidConnection = {
 export type HostedLinkCompletion =
   | { status: 'pending' }
   | { status: 'connected'; connection: PlaidConnection };
+
+/** Sync health surfaced with each connection (null before first sync). */
+export type ConnectionHealth = {
+  syncStatus: 'pending' | 'syncing' | 'complete' | 'failed';
+  updateStatus: string;
+  oldestTransactionDate: string | null;
+  lastSyncedAt: string | null;
+  lastErrorCode: string | null;
+};
+
+export type LinkTokenMode = 'add' | 'update';

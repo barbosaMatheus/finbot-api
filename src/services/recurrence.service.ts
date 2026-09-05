@@ -1,0 +1,440 @@
+/**
+ * Local recurring-stream detection (API-010).
+ *
+ * Groups settled economic activity by direction + normalized merchant,
+ * measures cadence with median gaps and permitted variance (not exact
+ * dates), measures amount variance for variable bills, and emits evidence
+ * with an explicit confidence band. Low-confidence streams are reported as
+ * low confidence — never silently promoted to "subscription".
+ *
+ * Internal transfers and card-payment pairs are excluded by construction:
+ * only economic roles participate.
+ */
+
+import { pool } from '../db.js';
+import type { Queryable } from '../lib/db-types.js';
+import { logger } from '../lib/logger.js';
+import type { UserAnalysisJobPayload } from '../jobs/types.js';
+import type { EconomicRole } from '../types/classification.js';
+
+export const RECURRENCE_RULE_VERSION = 'recur-v2';
+
+/** Roles that can form outgoing recurring streams (bills, subscriptions). */
+const OUTFLOW_STREAM_ROLES: ReadonlySet<EconomicRole> = new Set([
+  'expense',
+  'interest_or_fee',
+  'debt_principal_payment',
+  'unknown_outflow',
+]);
+
+/** Roles that can form incoming recurring streams (payroll, benefits). */
+const INFLOW_STREAM_ROLES: ReadonlySet<EconomicRole> = new Set([
+  'earned_income',
+  'unknown_inflow',
+]);
+
+export type RecurrenceInput = {
+  rowId: string;
+  merchantKey: string | null;
+  displayName: string | null;
+  /** Plaid sign: positive = money out. */
+  amount: number;
+  date: string;
+  pending: boolean;
+  role: EconomicRole;
+};
+
+export type Cadence =
+  | 'weekly'
+  | 'biweekly'
+  | 'monthly'
+  | 'quarterly'
+  | 'semiannual'
+  | 'annual'
+  | 'irregular';
+
+export type RecurringStream = {
+  streamKey: string;
+  direction: 'inflow' | 'outflow';
+  merchantKey: string;
+  /** Most frequent economic role among the stream's member transactions. */
+  dominantRole: EconomicRole;
+  displayName: string;
+  cadence: Cadence;
+  cadenceDays: number;
+  occurrences: number;
+  /** Mean absolute amount, positive. */
+  averageAmount: number;
+  lastAmount: number;
+  /** Relative amount variation (stddev / mean), 0 = perfectly fixed. */
+  amountVariance: number;
+  firstDate: string;
+  lastDate: string;
+  confidence: 'high' | 'medium' | 'low';
+  transactionRowIds: string[];
+  evidence: {
+    gaps: number[];
+    gapRegularity: number;
+  };
+};
+
+export type RecurrenceOptions = {
+  minOccurrences?: number;
+};
+
+const CADENCE_CLASSES: Array<{ cadence: Cadence; days: number; tolerance: number }> = [
+  { cadence: 'weekly', days: 7, tolerance: 2 },
+  { cadence: 'biweekly', days: 14, tolerance: 3 },
+  { cadence: 'monthly', days: 30.4, tolerance: 6 },
+  { cadence: 'quarterly', days: 91, tolerance: 14 },
+  { cadence: 'semiannual', days: 182, tolerance: 21 },
+  { cadence: 'annual', days: 365, tolerance: 30 },
+];
+
+/**
+ * Cadences long enough that three occurrences would need a year or more of
+ * history. Two matching outflows at one of these gaps may form a candidate.
+ */
+const LONG_CADENCES: ReadonlySet<Cadence> = new Set(['quarterly', 'semiannual', 'annual']);
+
+/** Two occurrences form a candidate only when their amounts agree this closely. */
+const SPARSE_AMOUNT_TOLERANCE = 0.1;
+
+function median(values: readonly number[]): number {
+  if (values.length === 0) return 0;
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 0 ? (sorted[mid - 1]! + sorted[mid]!) / 2 : sorted[mid]!;
+}
+
+function parseDay(iso: string): number {
+  return Date.parse(`${iso}T00:00:00Z`) / 86_400_000;
+}
+
+function round2(value: number): number {
+  return Math.round(value * 100) / 100 + 0;
+}
+
+function classifyCadence(medianGap: number): { cadence: Cadence; tolerance: number } {
+  for (const cls of CADENCE_CLASSES) {
+    if (Math.abs(medianGap - cls.days) <= cls.tolerance) {
+      return { cadence: cls.cadence, tolerance: cls.tolerance };
+    }
+  }
+
+  return { cadence: 'irregular', tolerance: 0 };
+}
+
+/**
+ * Long-cadence bills — insurance premiums, HOA dues, annual fees — are the
+ * largest single hits a plan can be surprised by, and they take years to
+ * reach three occurrences. Two settled OUTFLOWS to the same merchant, a gap
+ * in a quarterly-or-longer class and amounts within 10 % of each other are
+ * surfaced as a LOW-confidence candidate for the user to confirm on the
+ * review. Nothing else this thin becomes a stream; inflows never do (a
+ * bonus twice a year must not become income through this door).
+ */
+function isSparseLongCadenceCandidate(
+  occurrences: ReadonlyArray<{ date: string; amount: number }>,
+  direction: 'inflow' | 'outflow',
+): boolean {
+  if (direction !== 'outflow' || occurrences.length !== 2) return false;
+
+  const [first, second] = occurrences;
+  const gap = parseDay(second!.date) - parseDay(first!.date);
+  if (!LONG_CADENCES.has(classifyCadence(gap).cadence)) return false;
+
+  const larger = Math.max(first!.amount, second!.amount);
+  if (larger <= 0) return false;
+
+  return Math.abs(first!.amount - second!.amount) / larger <= SPARSE_AMOUNT_TOLERANCE;
+}
+
+/**
+ * Detect recurring streams from classified activity. Pure and
+ * deterministic; sorted by descending average amount within direction.
+ */
+export function detectRecurringStreams(
+  inputs: readonly RecurrenceInput[],
+  options: RecurrenceOptions = {},
+): RecurringStream[] {
+  const minOccurrences = options.minOccurrences ?? 3;
+
+  const groups = new Map<string, RecurrenceInput[]>();
+
+  for (const input of inputs) {
+    if (input.pending) continue;
+    if (!input.merchantKey) continue;
+
+    const direction =
+      input.amount > 0 && OUTFLOW_STREAM_ROLES.has(input.role)
+        ? 'outflow'
+        : input.amount < 0 && INFLOW_STREAM_ROLES.has(input.role)
+          ? 'inflow'
+          : null;
+
+    if (!direction) continue;
+
+    const key = `${direction}:${input.merchantKey}`;
+    const bucket = groups.get(key);
+    if (bucket) bucket.push(input);
+    else groups.set(key, [input]);
+  }
+
+  const streams: RecurringStream[] = [];
+
+  for (const [streamKey, group] of groups) {
+    // Collapse same-day postings into one occurrence: three coffees in one
+    // day are one shopping trip, not a thrice-daily subscription.
+    const byDay = new Map<string, RecurrenceInput[]>();
+
+    for (const input of group) {
+      const bucket = byDay.get(input.date);
+      if (bucket) bucket.push(input);
+      else byDay.set(input.date, [input]);
+    }
+
+    const occurrences = [...byDay.entries()]
+      .map(([date, txns]) => ({
+        date,
+        amount: txns.reduce((sum, txn) => sum + Math.abs(txn.amount), 0),
+        rowIds: txns.map((txn) => txn.rowId),
+      }))
+      .sort((a, b) => parseDay(a.date) - parseDay(b.date));
+
+    const direction = streamKey.startsWith('outflow') ? 'outflow' : 'inflow';
+    const sparse = occurrences.length < minOccurrences;
+    if (sparse && !isSparseLongCadenceCandidate(occurrences, direction)) continue;
+
+    const gaps: number[] = [];
+    for (let i = 1; i < occurrences.length; i += 1) {
+      gaps.push(parseDay(occurrences[i]!.date) - parseDay(occurrences[i - 1]!.date));
+    }
+
+    const medianGap = median(gaps);
+    if (medianGap <= 0) continue;
+
+    const { cadence, tolerance } = classifyCadence(medianGap);
+
+    const gapRegularity =
+      cadence === 'irregular'
+        ? 0
+        : gaps.filter((gap) => Math.abs(gap - medianGap) <= tolerance).length / gaps.length;
+
+    const amounts = occurrences.map((occ) => occ.amount);
+    const mean = amounts.reduce((sum, value) => sum + value, 0) / amounts.length;
+    const variance =
+      amounts.reduce((sum, value) => sum + (value - mean) ** 2, 0) / amounts.length;
+    const relVariance = mean === 0 ? 0 : Math.sqrt(variance) / mean;
+
+    let confidence: RecurringStream['confidence'];
+
+    if (sparse) {
+      // One gap is trivially "regular"; two matching amounts are trivially
+      // "fixed". The evidence is thin by construction, so say so.
+      confidence = 'low';
+    } else if (cadence !== 'irregular' && gapRegularity >= 0.8 && relVariance <= 0.15) {
+      confidence = 'high';
+    } else if (cadence !== 'irregular' && gapRegularity >= 0.6 && relVariance <= 0.5) {
+      confidence = 'medium';
+    } else {
+      confidence = 'low';
+    }
+
+    const displayName =
+      group.find((input) => input.displayName)?.displayName ??
+      group[0]!.merchantKey ??
+      'Unknown';
+
+    // The stream's dominant role — what most of its members were classified
+    // as. Downstream, only earned_income inflow streams may feed the income
+    // estimate; a stream of unknown_inflow deposits stays out of it.
+    const roleCounts = new Map<EconomicRole, number>();
+
+    for (const input of group) {
+      roleCounts.set(input.role, (roleCounts.get(input.role) ?? 0) + 1);
+    }
+
+    const dominantRole = [...roleCounts.entries()].sort(
+      (a, b) => b[1] - a[1] || a[0].localeCompare(b[0]),
+    )[0]![0];
+
+    streams.push({
+      streamKey,
+      direction,
+      merchantKey: group[0]!.merchantKey!,
+      dominantRole,
+      displayName,
+      cadence,
+      cadenceDays: Math.round(medianGap * 100) / 100,
+      occurrences: occurrences.length,
+      averageAmount: round2(mean),
+      lastAmount: round2(amounts[amounts.length - 1]!),
+      amountVariance: Math.round(relVariance * 10_000) / 10_000,
+      firstDate: occurrences[0]!.date,
+      lastDate: occurrences[occurrences.length - 1]!.date,
+      confidence,
+      transactionRowIds: occurrences.flatMap((occ) => occ.rowIds),
+      evidence: {
+        gaps,
+        gapRegularity: Math.round(gapRegularity * 100) / 100,
+      },
+    });
+  }
+
+  return streams.sort(
+    (a, b) =>
+      a.direction.localeCompare(b.direction) || b.averageAmount - a.averageAmount,
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Pipeline job
+// ---------------------------------------------------------------------------
+
+export type RecurrenceDeps = {
+  db: Queryable;
+  listInputs(userId: string): Promise<RecurrenceInput[]>;
+  enqueueNextStage(payload: UserAnalysisJobPayload): Promise<unknown>;
+};
+
+async function defaultListInputs(userId: string): Promise<RecurrenceInput[]> {
+  const { rows } = await pool.query<{
+    row_id: string;
+    merchant_normalized: string | null;
+    merchant_name: string | null;
+    name: string | null;
+    amount: string;
+    date: string;
+    pending: boolean;
+    economic_role: EconomicRole;
+  }>(
+    `WITH primary_currency AS (
+       SELECT t.iso_currency_code AS code
+       FROM plaid_transactions t
+       JOIN plaid_items i ON i.id = t.plaid_item_id AND i.status = 'active'
+       WHERE t.user_id = $1 AND t.is_removed = FALSE
+         AND t.iso_currency_code IS NOT NULL
+       GROUP BY t.iso_currency_code
+       ORDER BY COUNT(*) DESC, t.iso_currency_code
+       LIMIT 1
+     )
+     SELECT t.id AS row_id, t.merchant_normalized, t.merchant_name, t.name,
+            t.amount::text AS amount, t.date::text AS date, t.pending,
+            c.economic_role
+     FROM plaid_transactions t
+     JOIN transaction_classifications c ON c.transaction_row_id = t.id
+     -- Same active-item filter as the facts read, and only the primary
+     -- currency: a stream must never mix currencies or count postings the
+     -- facts engine cannot see.
+     JOIN plaid_items i ON i.id = t.plaid_item_id AND i.status = 'active'
+     WHERE t.user_id = $1 AND t.is_removed = FALSE
+       AND (t.iso_currency_code IS NULL
+            OR t.iso_currency_code = (SELECT code FROM primary_currency))`,
+    [userId],
+  );
+
+  return rows.map((row) => ({
+    rowId: row.row_id,
+    merchantKey: row.merchant_normalized,
+    displayName: row.merchant_name ?? row.name,
+    amount: Number(row.amount),
+    date: row.date,
+    pending: row.pending,
+    role: row.economic_role,
+  }));
+}
+
+async function defaultDeps(): Promise<RecurrenceDeps> {
+  const [enqueue, jobs] = await Promise.all([
+    import('../jobs/enqueue.js'),
+    import('../jobs/types.js'),
+  ]);
+
+  return {
+    db: pool,
+    listInputs: defaultListInputs,
+    enqueueNextStage: (payload) =>
+      enqueue.enqueueAnalysisStage(jobs.JOB.BUILD_FINANCIAL_FACTS, payload),
+  };
+}
+
+/**
+ * DETECT_USER_RECURRING: recompute streams, upsert by stable stream key so
+ * user confirmations survive, remove streams that vanished, then chain the
+ * facts build.
+ */
+export async function detectUserRecurring(
+  payload: UserAnalysisJobPayload,
+  depsOverride?: RecurrenceDeps,
+): Promise<{ streams: number }> {
+  const deps = depsOverride ?? (await defaultDeps());
+
+  const inputs = await deps.listInputs(payload.userId);
+  const streams = detectRecurringStreams(inputs);
+
+  for (const stream of streams) {
+    await deps.db.query(
+      `INSERT INTO recurring_streams (
+         user_id, stream_key, direction, merchant_key, display_name, cadence,
+         cadence_days, occurrences, average_amount, last_amount,
+         amount_variance, first_date, last_date, confidence,
+         transaction_row_ids, evidence, rule_version, dominant_role
+       )
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::date,
+               $13::date, $14, $15::uuid[], $16::jsonb, $17, $18)
+       ON CONFLICT (user_id, stream_key) DO UPDATE SET
+         display_name = EXCLUDED.display_name,
+         cadence = EXCLUDED.cadence,
+         cadence_days = EXCLUDED.cadence_days,
+         occurrences = EXCLUDED.occurrences,
+         average_amount = EXCLUDED.average_amount,
+         last_amount = EXCLUDED.last_amount,
+         amount_variance = EXCLUDED.amount_variance,
+         first_date = EXCLUDED.first_date,
+         last_date = EXCLUDED.last_date,
+         confidence = EXCLUDED.confidence,
+         transaction_row_ids = EXCLUDED.transaction_row_ids,
+         evidence = EXCLUDED.evidence,
+         rule_version = EXCLUDED.rule_version,
+         dominant_role = EXCLUDED.dominant_role,
+         updated_at = NOW()`,
+      [
+        payload.userId,
+        stream.streamKey,
+        stream.direction,
+        stream.merchantKey,
+        stream.displayName,
+        stream.cadence,
+        stream.cadenceDays,
+        stream.occurrences,
+        stream.averageAmount,
+        stream.lastAmount,
+        stream.amountVariance,
+        stream.firstDate,
+        stream.lastDate,
+        stream.confidence,
+        stream.transactionRowIds,
+        JSON.stringify(stream.evidence),
+        RECURRENCE_RULE_VERSION,
+        stream.dominantRole,
+      ],
+    );
+  }
+
+  await deps.db.query(
+    `DELETE FROM recurring_streams
+     WHERE user_id = $1 AND NOT (stream_key = ANY($2::text[]))`,
+    [payload.userId, streams.map((stream) => stream.streamKey)],
+  );
+
+  logger.info('recurrence detection complete', {
+    userId: payload.userId,
+    analysisRunId: payload.analysisRunId,
+    streams: streams.length,
+  });
+
+  await deps.enqueueNextStage(payload);
+
+  return { streams: streams.length };
+}

@@ -58,6 +58,7 @@ function data(overrides: Partial<FactsData> = {}): FactsData {
     transactions: [],
     accounts: [],
     streams: [],
+    declaredObligations: [],
     ...overrides,
   };
 }
@@ -227,6 +228,35 @@ describe('computeFinancialFacts', () => {
     expect(facts.period.observedDays).toBe(85);
     expect(facts.period.spendWindowDays).toBe(85);
     expect(facts.period.spendWindowStart).toBe('2026-06-01');
+  });
+
+  test('declared off-book obligations join cash obligations; one-time amounts are surfaced, not smeared', () => {
+    const facts = computeFinancialFacts(
+      data({
+        transactions: [txn({ amount: 100, role: 'expense', date: '2026-08-01' })],
+        declaredObligations: [
+          { kind: 'rent_to_person', label: null, amount: 500, cadence: 'monthly' },
+          { kind: 'family_loan', label: null, amount: 50, cadence: 'weekly' },
+          { kind: 'other', label: 'ER bill', amount: 1200, cadence: 'one_time' },
+        ],
+      }),
+      THROUGH,
+    );
+
+    // 500 + 50 × 52/12 = 716.67; the one-time $1,200 stays out of the monthly figure.
+    expect(facts.cashObligations.components.declaredObligationsMonthly).toBe(716.67);
+    expect(facts.cashObligations.averageMonthlyCashObligations).toBeCloseTo(
+      facts.cashObligations.components.netEconomicSpendMonthly + 716.67,
+      1,
+    );
+    expect(facts.cashObligations.declaredOneTime).toEqual({ total: 1200, count: 1 });
+  });
+
+  test('no declared obligations contributes nothing', () => {
+    const facts = computeFinancialFacts(data(), THROUGH);
+
+    expect(facts.cashObligations.components.declaredObligationsMonthly).toBe(0);
+    expect(facts.cashObligations.declaredOneTime).toEqual({ total: 0, count: 0 });
   });
 
   test('short windows are floored to ~one month to avoid wild extrapolation', () => {

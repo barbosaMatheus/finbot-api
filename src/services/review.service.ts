@@ -512,6 +512,8 @@ export type ReviewResponse = {
     monthlyIncomeEstimate: number;
     averageMonthlyEconomicSpend: number;
     averageMonthlyCashObligations: number;
+    /** The part of the figure above that the user declared in onboarding. */
+    declaredObligationsMonthly: number;
     availableToSpend: number;
   };
   fullFacts: FinancialFacts;
@@ -609,6 +611,8 @@ export async function getFinancialReviewForUser(
       averageMonthlyEconomicSpend: facts.spend.averageMonthlyEconomicSpend,
       averageMonthlyCashObligations:
         facts.cashObligations.averageMonthlyCashObligations,
+      declaredObligationsMonthly:
+        facts.cashObligations.components.declaredObligationsMonthly,
       availableToSpend: facts.balances.availableToSpend,
     },
     fullFacts: facts,

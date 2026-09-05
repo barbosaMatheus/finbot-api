@@ -13,6 +13,11 @@ import type { Queryable } from '../lib/db-types.js';
 import { logger } from '../lib/logger.js';
 import type { UserAnalysisJobPayload } from '../jobs/types.js';
 import {
+  declaredObligationsMonthly,
+  type DeclaredObligation,
+} from '../types/manual-profile.js';
+import { parseObligations } from './user-info.service.js';
+import {
   FACTS_RULE_VERSION,
   type AccountBalance,
   type BalanceSummary,
@@ -100,6 +105,8 @@ export type FactsData = {
   transactions: FactsTransaction[];
   accounts: AccountBalance[];
   streams: FactsRecurringStream[];
+  /** Off-book bills declared in onboarding (user_info.declared_obligations). */
+  declaredObligations: DeclaredObligation[];
 };
 
 /**
@@ -376,6 +383,19 @@ export function computeFinancialFacts(
   const hasLinkedCreditAccount = accounts.some((account) => account.type === 'credit');
   const externalCardObligationsMonthly = hasLinkedCreditAccount ? 0 : externalCardMonthly;
 
+  // Off-book bills from onboarding Q5 — rent to a person, a family loan,
+  // child support. Plaid cannot see them, and without them every number is
+  // wrong for anyone who has one. Monthly and weekly amounts normalize into
+  // the obligations figure; one-time amounts are surfaced whole, never
+  // smeared across months.
+  const declaredMonthly = declaredObligationsMonthly(data.declaredObligations);
+  const declaredOneTime = data.declaredObligations.filter(
+    (obligation) => obligation.cadence === 'one_time',
+  );
+  const declaredOneTimeTotal = roundCents(
+    declaredOneTime.reduce((sum, obligation) => sum + obligation.amount, 0),
+  );
+
   return {
     ruleVersion: FACTS_RULE_VERSION,
     period: {
@@ -411,7 +431,7 @@ export function computeFinancialFacts(
     },
     cashObligations: {
       averageMonthlyCashObligations: roundCents(
-        netSpendMonthly + debtMonthly + externalCardObligationsMonthly,
+        netSpendMonthly + debtMonthly + externalCardObligationsMonthly + declaredMonthly,
       ),
       components: {
         netEconomicSpendMonthly: netSpendMonthly,
@@ -419,7 +439,9 @@ export function computeFinancialFacts(
         // The value COUNTED into obligations — zero when a credit account
         // is connected (the observed total stays in movement).
         externalCardPaymentsMonthly: externalCardObligationsMonthly,
+        declaredObligationsMonthly: declaredMonthly,
       },
+      declaredOneTime: { total: declaredOneTimeTotal, count: declaredOneTime.length },
     },
     balances: summarizeBalances(accounts),
     recurring: {
@@ -528,7 +550,13 @@ export async function loadFactsData(
     [userId],
   );
 
+  const { rows: profileRows } = await db.query<{ declared_obligations: unknown }>(
+    `SELECT declared_obligations FROM user_info WHERE user_id = $1::uuid`,
+    [userId],
+  );
+
   return {
+    declaredObligations: parseObligations(profileRows[0]?.declared_obligations),
     transactions: txnRows.map((row) => ({
       rowId: row.row_id,
       amount: Number(row.amount),

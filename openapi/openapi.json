@@ -2961,6 +2961,9 @@
                         "averageMonthlyCashObligations": {
                           "type": "number"
                         },
+                        "declaredObligationsMonthly": {
+                          "type": "number"
+                        },
                         "availableToSpend": {
                           "type": "number"
                         }
@@ -2969,6 +2972,7 @@
                         "monthlyIncomeEstimate",
                         "averageMonthlyEconomicSpend",
                         "averageMonthlyCashObligations",
+                        "declaredObligationsMonthly",
                         "availableToSpend"
                       ],
                       "additionalProperties": false
@@ -3198,19 +3202,42 @@
                                 },
                                 "externalCardPaymentsMonthly": {
                                   "type": "number"
+                                },
+                                "declaredObligationsMonthly": {
+                                  "type": "number"
                                 }
                               },
                               "required": [
                                 "netEconomicSpendMonthly",
                                 "debtPaymentsMonthly",
-                                "externalCardPaymentsMonthly"
+                                "externalCardPaymentsMonthly",
+                                "declaredObligationsMonthly"
+                              ],
+                              "additionalProperties": false
+                            },
+                            "declaredOneTime": {
+                              "type": "object",
+                              "properties": {
+                                "total": {
+                                  "type": "number"
+                                },
+                                "count": {
+                                  "type": "integer",
+                                  "minimum": -9007199254740991,
+                                  "maximum": 9007199254740991
+                                }
+                              },
+                              "required": [
+                                "total",
+                                "count"
                               ],
                               "additionalProperties": false
                             }
                           },
                           "required": [
                             "averageMonthlyCashObligations",
-                            "components"
+                            "components",
+                            "declaredOneTime"
                           ],
                           "additionalProperties": false
                         },
@@ -3583,10 +3610,11 @@
                     "monthlyIncomeEstimate": 5200,
                     "averageMonthlyEconomicSpend": 3410,
                     "averageMonthlyCashObligations": 3890,
+                    "declaredObligationsMonthly": 0,
                     "availableToSpend": 7400
                   },
                   "fullFacts": {
-                    "ruleVersion": "facts-v2",
+                    "ruleVersion": "facts-v3",
                     "period": {
                       "oldestObservedDate": "2026-03-04",
                       "throughDate": "2026-08-24",
@@ -3618,7 +3646,12 @@
                       "components": {
                         "netEconomicSpendMonthly": 3410,
                         "debtPaymentsMonthly": 0,
-                        "externalCardPaymentsMonthly": 480
+                        "externalCardPaymentsMonthly": 480,
+                        "declaredObligationsMonthly": 0
+                      },
+                      "declaredOneTime": {
+                        "total": 0,
+                        "count": 0
                       }
                     },
                     "balances": {

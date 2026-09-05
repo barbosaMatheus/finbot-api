@@ -49,7 +49,7 @@ function item(overrides: Partial<ItemSyncOverview>): ItemSyncOverview {
 
 function factsFrom(data: Partial<FactsData>): FinancialFacts {
   return computeFinancialFacts(
-    { transactions: [], accounts: [], streams: [], ...data },
+    { transactions: [], accounts: [], streams: [], declaredObligations: [], ...data },
     THROUGH,
   );
 }
@@ -485,6 +485,7 @@ describe('buildFinancialReview job', () => {
         ],
         accounts: [],
         streams: [],
+        declaredObligations: [],
       }),
       getItems: async () => [item({})],
       getRun: async () => ({

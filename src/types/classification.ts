@@ -67,4 +67,4 @@ export type ClassificationOverride = {
 };
 
 /** Bump when rule behavior changes so snapshots can be rebuilt comparably. */
-export const CLASSIFICATION_RULE_VERSION = 'class-v1';
+export const CLASSIFICATION_RULE_VERSION = 'class-v2';

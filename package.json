@@ -12,9 +12,11 @@
     "postbuild": "node -e \"require('node:fs').cpSync('src/db/migrations','dist/db/migrations',{recursive:true})\"",
     "start": "node dist/server.js",
     "seed:db": "tsx src/db/seed-database.ts",
-    "openapi:generate": "tsx src/openapi/generate.ts --write"
+    "openapi:generate": "tsx src/openapi/generate.ts --write",
+    "eval:gameplan": "tsx src/eval/gameplan-eval.ts"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.124.0",
     "@scalar/express-api-reference": "^0.10.16",
     "bcrypt": "^6.0.0",
     "cookie-parser": "^1.4.7",

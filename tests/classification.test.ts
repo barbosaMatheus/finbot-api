@@ -43,8 +43,23 @@ describe('classifyTransaction — purchases and fees', () => {
     );
 
     expect(result.role).toBe('expense');
-    expect(result.displayBucket).toBe('Food & Drink');
+    expect(result.displayBucket).toBe('Eating Out');
     expect(result.confidence).toBe('high');
+  });
+
+  test('groceries and fuel split from eating out and other transport (class-v2)', () => {
+    // The gameplan never caps essentials and sizes caps on discretionary
+    // spend, so the two halves of these primaries must be separate buckets.
+    const bucketOf = (pfcPrimary: string, pfcDetailed: string) =>
+      classifyTransaction(txn({ accountType: 'credit', amount: 40, pfcPrimary, pfcDetailed }))
+        .displayBucket;
+
+    expect(bucketOf('FOOD_AND_DRINK', 'FOOD_AND_DRINK_GROCERIES')).toBe('Groceries');
+    expect(bucketOf('FOOD_AND_DRINK', 'FOOD_AND_DRINK_RESTAURANT')).toBe('Eating Out');
+    expect(bucketOf('FOOD_AND_DRINK', 'FOOD_AND_DRINK_COFFEE')).toBe('Eating Out');
+    expect(bucketOf('TRANSPORTATION', 'TRANSPORTATION_GAS')).toBe('Fuel');
+    expect(bucketOf('TRANSPORTATION', 'TRANSPORTATION_TAXIS_AND_RIDE_SHARES')).toBe('Transportation');
+    expect(bucketOf('ENTERTAINMENT', 'ENTERTAINMENT_MUSIC_AND_AUDIO')).toBe('Entertainment');
   });
 
   test('a categorized checking purchase is economic spend', () => {

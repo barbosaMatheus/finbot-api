@@ -44,11 +44,17 @@ function stream(overrides: Partial<FactsRecurringStream>): FactsRecurringStream 
     cadence: 'biweekly',
     cadenceDays: 14,
     averageAmount: 2600,
+    lastAmount: 2600,
     amountVariance: 0.01,
     confidence: 'high',
     lastDate: '2026-08-20',
     userStatus: 'detected',
     dominantRole: 'earned_income',
+    anchorDayOfMonth: null,
+    dateJitterDays: 2,
+    amountClass: 'fixed',
+    planningAmount: null,
+    amounts: [],
     ...overrides,
   };
 }
@@ -410,6 +416,104 @@ describe('computeFinancialFacts', () => {
     );
 
     expect(facts.recurring.outflows.map((s) => s.displayName)).toEqual(['Netflix']);
+  });
+
+  test('recurring outflows carry the planning fields and the observed range', () => {
+    // Gameplan step 1: what the review shows is what the plan will reserve.
+    const facts = computeFinancialFacts(
+      data({
+        streams: [
+          stream({
+            streamKey: 'outflow:city power',
+            direction: 'outflow',
+            displayName: 'City Power',
+            cadence: 'monthly',
+            cadenceDays: 30.4,
+            averageAmount: 118,
+            lastAmount: 132,
+            amountVariance: 0.21,
+            dominantRole: 'expense',
+            lastDate: '2026-08-12',
+            anchorDayOfMonth: 12,
+            dateJitterDays: 3,
+            amountClass: 'variable',
+            planningAmount: 140,
+            amounts: [90, 140, 120, 132],
+          }),
+          stream({
+            streamKey: 'outflow:amazon',
+            direction: 'outflow',
+            displayName: 'Amazon',
+            cadence: 'irregular',
+            cadenceDays: 23,
+            averageAmount: 63.5,
+            lastAmount: 65,
+            amountVariance: 0.9,
+            dominantRole: 'expense',
+            lastDate: '2026-08-11',
+            anchorDayOfMonth: null,
+            dateJitterDays: 14,
+            amountClass: 'erratic',
+            planningAmount: null,
+            amounts: [23, 154, 12, 65],
+          }),
+        ],
+      }),
+      THROUGH,
+    );
+
+    const [power, amazon] = facts.recurring.outflows;
+
+    expect(power).toMatchObject({
+      cadenceDays: 30.4,
+      lastAmount: 132,
+      amountClass: 'variable',
+      planningAmount: 140,
+      amountRange: { low: 90, high: 140 },
+      anchorDayOfMonth: 12,
+      dateJitterDays: 3,
+    });
+    // Erratic: the range is still informative, but nothing is reserved.
+    expect(amazon).toMatchObject({
+      amountClass: 'erratic',
+      planningAmount: null,
+      amountRange: { low: 12, high: 154 },
+      anchorDayOfMonth: null,
+    });
+  });
+
+  test('a stream the detector has not refreshed reads as unknown, never invented', () => {
+    const facts = computeFinancialFacts(
+      data({
+        streams: [
+          stream({
+            streamKey: 'outflow:legacy',
+            direction: 'outflow',
+            displayName: 'Legacy Row',
+            cadence: 'monthly',
+            cadenceDays: 30.4,
+            averageAmount: 40,
+            lastAmount: 40,
+            dominantRole: 'expense',
+            lastDate: '2026-08-12',
+            anchorDayOfMonth: null,
+            dateJitterDays: null,
+            amountClass: null,
+            planningAmount: null,
+            amounts: [],
+          }),
+        ],
+      }),
+      THROUGH,
+    );
+
+    expect(facts.recurring.outflows[0]).toMatchObject({
+      amountClass: null,
+      planningAmount: null,
+      amountRange: null,
+      anchorDayOfMonth: null,
+      dateJitterDays: null,
+    });
   });
 
   test('a recurring unknown_inflow stream never becomes income by itself', () => {

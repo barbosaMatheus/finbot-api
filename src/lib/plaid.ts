@@ -101,8 +101,10 @@ export function getPlaidRedirectUri(): string | undefined {
 }
 
 /**
- * Android package name, required by Plaid for OAuth institutions on Android.
- * Optional for the same reason as the redirect URI.
+ * Android package name. Plaid requires it on every link_token that the
+ * Android SDK will open (not only OAuth institutions), forbids it on tokens
+ * for other platforms, and only accepts names listed under "Allowed Android
+ * package names" in the Dashboard. Unset means Android Link is not configured.
  */
 export function getPlaidAndroidPackageName(): string | undefined {
   const value = process.env.PLAID_ANDROID_PACKAGE_NAME?.trim();

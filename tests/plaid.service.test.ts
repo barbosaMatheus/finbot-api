@@ -441,7 +441,7 @@ describe('link token platform', () => {
 
   test('web (the default) requests hosted_link and the redirect URI, never the package name', async () => {
     process.env.PLAID_REDIRECT_URI = 'https://api.example.com/plaid/oauth';
-    process.env.PLAID_ANDROID_PACKAGE_NAME = 'com.finbotpbd.finbot';
+    process.env.PLAID_ANDROID_PACKAGE_NAME = 'com.finbot.finbot';
     mockClient.linkTokenCreate.mockResolvedValue(linkTokenOk);
 
     await createLinkToken('user-1');
@@ -454,13 +454,13 @@ describe('link token platform', () => {
 
   test('android sends the package name and neither the redirect URI nor hosted_link', async () => {
     process.env.PLAID_REDIRECT_URI = 'https://api.example.com/plaid/oauth';
-    process.env.PLAID_ANDROID_PACKAGE_NAME = 'com.finbotpbd.finbot';
+    process.env.PLAID_ANDROID_PACKAGE_NAME = 'com.finbot.finbot';
     mockClient.linkTokenCreate.mockResolvedValue(linkTokenOk);
 
     await createLinkToken('user-1', { platform: 'android' });
 
     const request = mockClient.linkTokenCreate.mock.calls[0]?.[0] as Record<string, unknown>;
-    expect(request).toHaveProperty('android_package_name', 'com.finbotpbd.finbot');
+    expect(request).toHaveProperty('android_package_name', 'com.finbot.finbot');
     expect(request).not.toHaveProperty('redirect_uri');
     expect(request).not.toHaveProperty('hosted_link');
   });

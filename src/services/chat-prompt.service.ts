@@ -5,7 +5,7 @@ import { ChatPromptError, type ChatPromptInput } from '../types/chat-prompt.js';
 
 const DEFAULT_PROMPT_TEMPLATE_NAME = 'Test Template';
 const DEFAULT_OLLAMA_URL = 'http://ollama:11434';
-const DEFAULT_OLLAMA_MODEL = 'tinyllama';
+const DEFAULT_OLLAMA_MODEL = 'qwen3.5-mini';
 const DEFAULT_OLLAMA_TIMEOUT_MS = 120_000;
 
 function toPgVectorString(values: number[]): string {

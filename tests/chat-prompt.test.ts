@@ -140,7 +140,7 @@ describe('POST /chat-prompt', () => {
       stream: boolean;
       prompt: string;
     };
-    expect(sentBody.model).toBe('tinyllama');
+    expect(sentBody.model).toBe('qwen3.5-mini');
     expect(sentBody.stream).toBe(false);
     expect(sentBody.prompt).toContain('ctx-1');
     expect(sentBody.prompt).toContain('ctx-2');

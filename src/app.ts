@@ -12,6 +12,7 @@ import queryVectorDbRouter from './routes/query-vector-db.js';
 import onboardingRouter from './routes/onboarding.js';
 import plaidRouter from './routes/plaid.js';
 import promptTemplateRouter from './routes/prompt-template.js';
+import chatPromptRouter from './routes/chat-prompt.js';
 
 dotenv.config();
 
@@ -107,6 +108,7 @@ app.use('/base-intelligence', baseIntelligenceRouter);
 app.use('/embeddings', embedTextRouter);
 app.use('/query-vector-db', queryVectorDbRouter);
 app.use('/prompt-template', promptTemplateRouter);
+app.use('/chat-prompt', chatPromptRouter);
 
 app.use((_req: Request, res: Response) => {
   res.status(404).json({ error: 'Route not found' });

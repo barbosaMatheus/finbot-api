@@ -34,7 +34,7 @@ describe('OllamaClient', () => {
     expect(seen!.body).toMatchObject({
       model: 'llama3.1',
       stream: false,
-      options: { temperature: 0, num_predict: 256 },
+      options: { temperature: 0, num_predict: 256, repeat_penalty: 1.1 },
       messages: [
         { role: 'system', content: 'be plain' },
         { role: 'user', content: '{"x":1}' },

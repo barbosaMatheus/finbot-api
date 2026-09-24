@@ -149,6 +149,29 @@ describe('explain(grade)', () => {
     expect((await createLlmProvider(new FakeLlmClient([invented])).explain({ kind: 'grade', grade, period: shortlist.period })).fallbackReason).toBe('number_invented');
   });
 
+  test('the prompt states the exact line count, the schema caps it, and the token budget follows it', async () => {
+    const count = grade.results.length;
+    const client = new FakeLlmClient([
+      JSON.stringify({ lines: [0, 1, 2].map((index) => ({ index, text: 'Fine.' })), improvements: null }),
+      // One line too many: a model that lost count and wrote a line per bill.
+      JSON.stringify({ lines: [0, 1, 2, 2].map((index) => ({ index, text: 'Fine.' })), improvements: null }),
+    ]);
+    const provider = createLlmProvider(client);
+
+    const ok = await provider.explain({ kind: 'grade', grade, period: shortlist.period });
+    expect(ok.source).toBe('model');
+    const request = client.requests[0]!;
+    expect(request.system).toContain(`exactly ${count} results`);
+    expect(request.system).toContain(`exactly ${count} lines`);
+    expect(request.system).toContain(`index 0 to ${count - 1}`);
+    expect(request.maxTokens).toBe(128 + 72 * (count + 1));
+    expect(request.schema.safeParse({ lines: [0, 1, 2, 2].map((index) => ({ index, text: 'x' })), improvements: null }).success).toBe(false);
+
+    const overrun = await provider.explain({ kind: 'grade', grade, period: shortlist.period });
+    expect(overrun.fallbackReason).toBe('malformed');
+    expect(overrun.source).toBe('template');
+  });
+
   test('the template grade names the deciding numbers and passes containment', async () => {
     const narration = await createLlmProvider(null).explain({ kind: 'grade', grade, period: shortlist.period });
     const allowed = allowedNumbers(gradePayload(grade, shortlist.period));

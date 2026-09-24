@@ -35,6 +35,20 @@ export const gradeOutputSchema = z.object({
   improvements: z.string().nullable(),
 });
 
+/**
+ * The grade schema capped at the number of results. A small model that
+ * loses count writes one line per bill instead of one per result and, at
+ * temperature 0 under a JSON-schema constraint, can loop on the same line
+ * until the token cap; the cap in the schema and the exact count in the
+ * prompt close that path.
+ */
+export function gradeOutputSchemaFor(resultCount: number): typeof gradeOutputSchema {
+  return z.object({
+    lines: z.array(z.object({ index: z.number().int(), text: z.string() })).max(resultCount),
+    improvements: z.string().nullable(),
+  });
+}
+
 export const diffOutputSchema = z.object({
   reply: z.string(),
 });
@@ -80,9 +94,11 @@ export function gradePayload(grade: PeriodGrade, period: Period): Record<string,
 }
 
 export function gradePrompt(grade: PeriodGrade, period: Period): { system: string; user: string } {
+  const count = grade.results.length;
+  const indices = count === 1 ? 'index 0' : `index 0 to ${count - 1}`;
   return {
     system: `${VOICE_RULES}
-Task: the results are already ordered so the positives come first. For each result, write one sentence (at most 30 words) saying how it went and the number that decided it. A bill that never landed is neither met nor missed: say it was expected and ask whether it moved. Then write one short "where you could improve" paragraph (at most 40 words), or null if nothing was missed or close. Return {"lines":[{"index":<result index>,"text":"<sentence>"}],"improvements":<paragraph or null>}.`,
+Task: there are exactly ${count} results, already ordered so the positives come first. Write exactly ${count} lines, one per result, ${indices}, never two lines for the same index. Each line is one sentence (at most 30 words) saying how that result went and the number that decided it. A result that covers several bills gets one sentence covering them all. A bill that never landed is neither met nor missed: say it was expected and ask whether it moved. Then write one short "where you could improve" paragraph (at most 40 words), or null if nothing was missed or close. Return {"lines":[{"index":<result index>,"text":"<sentence>"}],"improvements":<paragraph or null>} and stop.`,
     user: JSON.stringify(gradePayload(grade, period)),
   };
 }

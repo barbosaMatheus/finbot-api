@@ -1,7 +1,8 @@
 /**
  * Ollama adapter for local development. Uses the native chat endpoint with
  * a JSON-schema `format` so the model is constrained to the shape asked
- * for, no streaming, temperature 0 for repeatable words.
+ * for, no streaming, temperature 0 for repeatable words, and a mild
+ * repeat penalty so a model that starts restating a line pays for it.
  */
 
 import { z } from 'zod';
@@ -33,7 +34,7 @@ export class OllamaClient implements LlmClient {
       model: this.options.model,
       stream: false,
       format: z.toJSONSchema(request.schema, { target: 'draft-2020-12', unrepresentable: 'any' }),
-      options: { temperature: 0, num_predict: request.maxTokens },
+      options: { temperature: 0, num_predict: request.maxTokens, repeat_penalty: 1.1 },
       messages: [
         { role: 'system', content: request.system },
         { role: 'user', content: request.user },

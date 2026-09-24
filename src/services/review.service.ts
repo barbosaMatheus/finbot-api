@@ -347,6 +347,13 @@ export function generateReviewItems(input: ReviewItemInput): GeneratedReviewItem
           cadence: stream.cadence,
           monthlyAmount: stream.monthlyAmount,
           confidence: stream.confidence,
+          // What confirming commits the plan to: the amount it will set
+          // aside for the next posting, and the range that amount came from.
+          lastAmount: stream.lastAmount,
+          amountClass: stream.amountClass,
+          planningAmount: stream.planningAmount,
+          amountRange: stream.amountRange,
+          anchorDayOfMonth: stream.anchorDayOfMonth,
         },
         proposedValue: null,
         allowedActions: ['confirm_stream', 'dismiss_stream'],

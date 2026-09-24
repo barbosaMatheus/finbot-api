@@ -93,6 +93,12 @@ export async function getItemSyncOverviews(
 export type OrchestrationDeps = {
   db: Queryable;
   enqueueAnalysis(payload: UserAnalysisJobPayload): Promise<unknown>;
+  /**
+   * A finished user's routine sync: re-derive streams and let the gameplan
+   * react (payday detection, nudges). Optional so older callers and tests
+   * need not know about it.
+   */
+  enqueueRefresh?(payload: { userId: string }): Promise<unknown>;
   getActiveRun: typeof getActiveRun;
   getLatestRun: typeof getLatestRun;
   ensureActiveRun: typeof ensureActiveRun;
@@ -106,6 +112,7 @@ async function defaultDeps(): Promise<OrchestrationDeps> {
   return {
     db: pool,
     enqueueAnalysis: (payload) => enqueue.enqueueUserAnalysis(payload),
+    enqueueRefresh: (payload) => enqueue.enqueueUserRefresh(payload),
     getActiveRun,
     getLatestRun,
     ensureActiveRun,
@@ -149,6 +156,11 @@ export async function maybeStartUserAnalysis(
   const latest = await deps.getLatestRun(userId, deps.db);
 
   if (latest?.status === 'confirmed') {
+    // The onboarding pipeline is done for good; the gameplan's refresh
+    // takes over so streams stay current after every sync.
+    if (deps.enqueueRefresh) {
+      await deps.enqueueRefresh({ userId });
+    }
     return 'skipped';
   }
 

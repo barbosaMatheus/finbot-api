@@ -17,9 +17,11 @@ import {
   type DeclaredObligation,
 } from '../types/manual-profile.js';
 import { parseObligations } from './user-info.service.js';
+import { isStreamStale } from '../lib/streams.js';
 import {
   FACTS_RULE_VERSION,
   type AccountBalance,
+  type AmountClass,
   type BalanceSummary,
   type CategoryTotal,
   type FactsRecurringStream,
@@ -109,19 +111,24 @@ export type FactsData = {
   declaredObligations: DeclaredObligation[];
 };
 
-/**
- * A stream whose last occurrence is much older than its cadence has ended —
- * a previous employer's payroll, a cancelled subscription. Grace is 2× the
- * cadence with a 21-day floor so a weekly stream survives a short vacation.
- * User-confirmed streams follow the same physics: money that stopped
- * arriving is not income.
- */
-export function isStreamStale(
-  stream: Pick<FactsRecurringStream, 'cadenceDays' | 'lastDate'>,
-  throughDate: string,
-): boolean {
-  const graceDays = Math.max(2 * stream.cadenceDays, 21);
-  return parseDay(throughDate) - parseDay(stream.lastDate) > graceDays;
+// The staleness rule lives in lib/streams.ts so the gameplan engine can
+// share it without importing the database pool; re-exported for callers.
+export { isStreamStale };
+
+/** The lowest and highest recent amount, the range the review quotes; null with no evidence. */
+export function amountRangeOf(amounts: readonly number[]): { low: number; high: number } | null {
+  if (amounts.length === 0) return null;
+  return { low: Math.min(...amounts), high: Math.max(...amounts) };
+}
+
+/** Recent amounts from a stream's evidence JSON; anything malformed reads as no evidence. */
+function parseEvidenceAmounts(evidence: unknown): number[] {
+  if (typeof evidence !== 'object' || evidence === null) return [];
+  const amounts = (evidence as { amounts?: unknown }).amounts;
+  if (!Array.isArray(amounts)) return [];
+  return amounts.filter(
+    (value): value is number => typeof value === 'number' && Number.isFinite(value),
+  );
 }
 
 /**
@@ -451,9 +458,16 @@ export function computeFinancialFacts(
           streamKey: stream.streamKey,
           displayName: stream.displayName,
           cadence: stream.cadence,
+          cadenceDays: stream.cadenceDays,
           averageAmount: stream.averageAmount,
+          lastAmount: stream.lastAmount,
           monthlyAmount: monthlyFromCadence(stream.averageAmount, stream.cadenceDays),
           amountVariance: stream.amountVariance,
+          amountClass: stream.amountClass,
+          planningAmount: stream.planningAmount,
+          amountRange: amountRangeOf(stream.amounts),
+          anchorDayOfMonth: stream.anchorDayOfMonth,
+          dateJitterDays: stream.dateJitterDays,
           confidence: stream.confidence,
           lastDate: stream.lastDate,
         })),
@@ -538,13 +552,25 @@ export async function loadFactsData(
     last_date: string;
     user_status: 'detected' | 'confirmed' | 'dismissed';
     dominant_role: string | null;
+    last_amount: string;
+    anchor_day_of_month: number | null;
+    date_jitter_days: number | null;
+    amount_class: AmountClass | null;
+    planning_amount: string | null;
+    evidence: unknown;
+    dominant_bucket: string | null;
+    merchant_key: string;
   }>(
     `SELECT stream_key, direction, display_name, cadence,
             cadence_days::text AS cadence_days,
             average_amount::text AS average_amount,
             amount_variance::text AS amount_variance,
             confidence, last_date::text AS last_date, user_status,
-            dominant_role
+            dominant_role,
+            last_amount::text AS last_amount,
+            anchor_day_of_month, date_jitter_days, amount_class,
+            planning_amount::text AS planning_amount,
+            evidence, dominant_bucket, merchant_key
      FROM recurring_streams
      WHERE user_id = $1`,
     [userId],
@@ -585,11 +611,19 @@ export async function loadFactsData(
       cadence: row.cadence,
       cadenceDays: Number(row.cadence_days),
       averageAmount: Number(row.average_amount),
+      lastAmount: Number(row.last_amount),
       amountVariance: Number(row.amount_variance),
       confidence: row.confidence,
       lastDate: row.last_date,
       userStatus: row.user_status,
       dominantRole: row.dominant_role,
+      anchorDayOfMonth: row.anchor_day_of_month,
+      dateJitterDays: row.date_jitter_days,
+      amountClass: row.amount_class,
+      planningAmount: row.planning_amount === null ? null : Number(row.planning_amount),
+      amounts: parseEvidenceAmounts(row.evidence),
+      dominantBucket: row.dominant_bucket,
+      merchantKey: row.merchant_key,
     })),
   };
 }

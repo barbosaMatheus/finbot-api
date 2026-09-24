@@ -9,5 +9,6 @@ import './item-sync.js';
 import './analysis-pipeline.js';
 import './dead-letter.js';
 import './watchdog.js';
+import './gameplan.js';
 
 export {};

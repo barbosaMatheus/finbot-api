@@ -253,7 +253,8 @@ export type ReconcileDeps = {
   enqueueNextStage(payload: UserAnalysisJobPayload): Promise<unknown>;
 };
 
-async function defaultListLinkable(userId: string): Promise<LinkableTransaction[]> {
+/** The default linkable read; exported so the post-onboarding refresh can run the stage in-process. */
+export async function defaultListLinkable(userId: string): Promise<LinkableTransaction[]> {
   const { rows } = await pool.query<{
     row_id: string;
     account_id: string;

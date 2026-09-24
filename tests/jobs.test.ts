@@ -95,6 +95,11 @@ describe('queue configuration', () => {
         'BUILD_FINANCIAL_REVIEW',
         'SEND_REVIEW_READY_NOTIFICATION',
         'SWEEP_STALE_RUNS',
+        'REFRESH_USER_ANALYSIS',
+        'BUILD_GAMEPLAN',
+        'GRADE_PERIOD',
+        'EVALUATE_NUDGES',
+        'RUN_GAMEPLAN_SCHEDULER',
       ].sort(),
     );
   });

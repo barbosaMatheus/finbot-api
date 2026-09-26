@@ -23,7 +23,10 @@ const TENS: Record<string, number> = {
 };
 const MULTIPLIERS: Record<string, number> = { hundred: 100, thousand: 1000, grand: 1000, k: 1000 };
 
-const DIGIT_PATTERN = /(?<![\w.])[-−]?\$?\d[\d,]*(?:\.\d+)?(?:\s?[kK](?![a-z]))?%?(?:st|nd|rd|th)?(?![\w.])/g;
+// A number may end a sentence: the trailing guard rejects a letter, a digit
+// or a decimal point followed by a digit, never a full stop. (Rejecting every
+// "." made "It is 10." invisible and read "$1,340." as 1.)
+const DIGIT_PATTERN = /(?<![\w.])[-−]?\$?\d[\d,]*(?:\.\d+)?(?:\s?[kK](?![a-z]))?%?(?:st|nd|rd|th)?(?!\w|\.\d)/g;
 const ISO_DATE_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/;
 const YEAR_MONTH_PATTERN = /^(\d{4})-(\d{2})$/;
 

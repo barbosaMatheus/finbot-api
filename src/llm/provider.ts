@@ -28,7 +28,7 @@ import {
   diffOutputSchema,
   diffPayload,
   diffPrompt,
-  gradeOutputSchema,
+  gradeOutputSchemaFor,
   gradePayload,
   gradePrompt,
   planOutputSchema,
@@ -52,7 +52,16 @@ import {
   type RawNarration,
 } from './types.js';
 
-const NARRATION_MAX_TOKENS = 4096;
+/**
+ * Tokens a narration may spend, from the number of sentences asked for.
+ * A sentence of 30 words with its JSON wrapper is under 72 tokens; the
+ * base covers the braces, keys and the improvements paragraph. A budget
+ * this tight is what stops a looping model: it is cut off within a second
+ * or two and the template speaks, instead of running to a 4096-token cap.
+ */
+function narrationBudget(sentences: number): number {
+  return 128 + 72 * sentences;
+}
 const ADJUSTMENT_MAX_TOKENS = 1024;
 
 // The engine owns the record's schema; the adapters constrain the model to
@@ -163,7 +172,8 @@ async function explainWith(
 
       const payload = planPayload(input.shortlist);
       const { system, user } = planPrompt(input.shortlist);
-      const answer = await askForJson(client, system, user, planOutputSchema, NARRATION_MAX_TOKENS);
+      const sentences = input.shortlist.plan.length + input.shortlist.alternates.length;
+      const answer = await askForJson(client, system, user, planOutputSchema, narrationBudget(sentences));
       if (!answer.ok) return fallback(template, answer.reason, answer.model, rawAgainst(answer.raw, payload));
 
       // Every target must get a line, and every line must be contained;
@@ -188,7 +198,8 @@ async function explainWith(
 
       const payload = gradePayload(input.grade, input.period);
       const { system, user } = gradePrompt(input.grade, input.period);
-      const answer = await askForJson(client, system, user, gradeOutputSchema, NARRATION_MAX_TOKENS);
+      const count = input.grade.results.length;
+      const answer = await askForJson(client, system, user, gradeOutputSchemaFor(count), narrationBudget(count + 1));
       if (!answer.ok) return fallback(template, answer.reason, answer.model, rawAgainst(answer.raw, payload));
 
       const lines: string[] = [];
@@ -221,7 +232,7 @@ async function explainWith(
 
       const payload = diffPayload(input.result, input.adjustment);
       const { system, user } = diffPrompt(input.result, input.adjustment);
-      const answer = await askForJson(client, system, user, diffOutputSchema, NARRATION_MAX_TOKENS);
+      const answer = await askForJson(client, system, user, diffOutputSchema, narrationBudget(2));
       if (!answer.ok) return fallback(template, answer.reason, answer.model, rawAgainst(answer.raw, payload));
 
       const reply = answer.value.reply.trim();

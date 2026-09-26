@@ -103,11 +103,24 @@ export type OrchestrationDeps = {
   getLatestRun: typeof getLatestRun;
   ensureActiveRun: typeof ensureActiveRun;
   transitionRun: typeof transitionRun;
+  /**
+   * A review already on screen never re-runs by itself: the gate below only
+   * starts a run that is still waiting for history, and the recompute route
+   * is the review's own action. An institution linked from the review
+   * ("Connect that card") therefore never reached it. These two seams let
+   * the gate fold such an Item in. Optional so older callers and tests need
+   * not know about them; without both, a ready review is left alone.
+   */
+  hasItemLinkedAfterRun?: typeof hasItemLinkedAfterRun;
+  requestRecompute?(userId: string): Promise<{ status: 'queued' | 'already_recomputing' }>;
   now(): Date;
 };
 
 async function defaultDeps(): Promise<OrchestrationDeps> {
-  const enqueue = await import('../jobs/enqueue.js');
+  const [enqueue, corrections] = await Promise.all([
+    import('../jobs/enqueue.js'),
+    import('./corrections.service.js'),
+  ]);
 
   return {
     db: pool,
@@ -117,8 +130,37 @@ async function defaultDeps(): Promise<OrchestrationDeps> {
     getLatestRun,
     ensureActiveRun,
     transitionRun,
+    hasItemLinkedAfterRun,
+    requestRecompute: (userId) => corrections.requestRecompute(userId),
     now: () => new Date(),
   };
+}
+
+/**
+ * True when an active Item was linked after the run's last transition.
+ * `updated_at` rather than `review_ready_at`: the latter is stamped once,
+ * on the first review, while every transition (including the one that ends
+ * a recompute) moves `updated_at` — so a folded-in Item never looks new
+ * again and the gate cannot loop.
+ */
+export async function hasItemLinkedAfterRun(
+  userId: string,
+  runId: string,
+  db: Queryable = pool,
+): Promise<boolean> {
+  const { rows } = await db.query<{ stale: boolean }>(
+    `SELECT EXISTS (
+       SELECT 1
+       FROM plaid_items linked
+       JOIN financial_analysis_runs run ON run.id = $2
+       WHERE linked.user_id = $1
+         AND linked.status = 'active'
+         AND linked.created_at > run.updated_at
+     ) AS stale`,
+    [userId, runId],
+  );
+
+  return rows[0]?.stale === true;
 }
 
 /**
@@ -166,6 +208,29 @@ export async function maybeStartUserAnalysis(
 
   const run =
     (await deps.getActiveRun(userId, deps.db)) ?? (await deps.ensureActiveRun(userId));
+
+  if (run.status === 'review_ready') {
+    // A review is on screen. Analysis is done, but an institution linked
+    // from the review itself is invisible to it until a recompute folds the
+    // Item in — and only once every Item has synced, or the recompute would
+    // read half a history. The item sync that finishes last calls back here.
+    if (
+      deps.hasItemLinkedAfterRun &&
+      deps.requestRecompute &&
+      items.every((item) => item.terminal) &&
+      (await deps.hasItemLinkedAfterRun(userId, run.id, deps.db))
+    ) {
+      const result = await deps.requestRecompute(userId);
+
+      logger.info('review recompute requested for a newly linked institution', {
+        userId,
+        analysisRunId: run.id,
+        status: result.status,
+      });
+    }
+
+    return 'skipped';
+  }
 
   if (run.status !== 'waiting_for_history') {
     return 'skipped';

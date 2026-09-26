@@ -42,6 +42,9 @@ export const hostedLinkSchema = z.object({
 export const linkTokenSchema = z.object({
   mode: z.enum(['add', 'update']).optional(),
   itemId: z.string().uuid().optional(),
+  // Which Link SDK will open the token; Plaid's token is platform-specific.
+  // Omitted means web (the browser's Hosted Link flow).
+  platform: z.enum(['web', 'ios', 'android']).optional(),
 });
 
 router.post('/link-token', requireAuth, async (req, res, next) => {
@@ -64,6 +67,7 @@ router.post('/link-token', requireAuth, async (req, res, next) => {
       await createLinkToken(userId, {
         mode: parsed.data.mode,
         itemRowId: parsed.data.itemId,
+        platform: parsed.data.platform,
       }),
     );
   } catch (err) {

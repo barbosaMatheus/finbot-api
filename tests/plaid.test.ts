@@ -66,6 +66,7 @@ describe('POST /plaid/link-token', () => {
     expect(mockedCreateLinkToken).toHaveBeenCalledWith('user-1', {
       mode: undefined,
       itemRowId: undefined,
+      platform: undefined,
     });
     expect(response.status).toBe(200);
     expect(response.body).toEqual({
@@ -73,6 +74,34 @@ describe('POST /plaid/link-token', () => {
       expiration: '2026-01-01T04:00:00Z',
       hostedLinkUrl: 'https://hosted.plaid.com/link/abc',
     });
+  });
+
+  test('forwards the platform that will open Link', async () => {
+    mockedCreateLinkToken.mockResolvedValueOnce({
+      linkToken: 'link-sandbox-2',
+      expiration: null,
+      hostedLinkUrl: null,
+    });
+
+    const response = await request(app)
+      .post('/plaid/link-token')
+      .send({ platform: 'android' });
+
+    expect(response.status).toBe(200);
+    expect(mockedCreateLinkToken).toHaveBeenCalledWith('user-1', {
+      mode: undefined,
+      itemRowId: undefined,
+      platform: 'android',
+    });
+  });
+
+  test('rejects a platform Plaid has no SDK for', async () => {
+    const response = await request(app)
+      .post('/plaid/link-token')
+      .send({ platform: 'windows' });
+
+    expect(response.status).toBe(400);
+    expect(mockedCreateLinkToken).not.toHaveBeenCalled();
   });
 
   test('maps a PlaidError to its status code', async () => {

@@ -27,8 +27,8 @@ jest.mock('../src/lib/plaid', () => ({
   getPlaidClient: () => mockClient,
   getPlaidProducts: () => ['transactions'],
   getPlaidCountryCodes: () => ['US'],
-  getPlaidRedirectUri: () => undefined,
-  getPlaidAndroidPackageName: () => undefined,
+  getPlaidRedirectUri: () => process.env.PLAID_REDIRECT_URI?.trim() || undefined,
+  getPlaidAndroidPackageName: () => process.env.PLAID_ANDROID_PACKAGE_NAME?.trim() || undefined,
   getHostedLinkRedirectUri: () => undefined,
   getPlaidWebhookUrl: () => process.env.PLAID_WEBHOOK_URL?.trim() || undefined,
   getRequestedHistoryDays: () => 180,
@@ -426,5 +426,62 @@ describe('duplicate Item detection (API-016)', () => {
 
     expect(connection.duplicate).toBeUndefined();
     expect(mockClient.itemRemove).not.toHaveBeenCalled();
+  });
+});
+
+describe('link token platform', () => {
+  const linkTokenOk = {
+    data: { link_token: 'link-1', expiration: null, hosted_link_url: null },
+  };
+
+  afterEach(() => {
+    delete process.env.PLAID_REDIRECT_URI;
+    delete process.env.PLAID_ANDROID_PACKAGE_NAME;
+  });
+
+  test('web (the default) requests hosted_link and the redirect URI, never the package name', async () => {
+    process.env.PLAID_REDIRECT_URI = 'https://api.example.com/plaid/oauth';
+    process.env.PLAID_ANDROID_PACKAGE_NAME = 'com.finbot.finbot';
+    mockClient.linkTokenCreate.mockResolvedValue(linkTokenOk);
+
+    await createLinkToken('user-1');
+
+    const request = mockClient.linkTokenCreate.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(request).toHaveProperty('hosted_link');
+    expect(request).toHaveProperty('redirect_uri', 'https://api.example.com/plaid/oauth');
+    expect(request).not.toHaveProperty('android_package_name');
+  });
+
+  test('android sends the package name and neither the redirect URI nor hosted_link', async () => {
+    process.env.PLAID_REDIRECT_URI = 'https://api.example.com/plaid/oauth';
+    process.env.PLAID_ANDROID_PACKAGE_NAME = 'com.finbot.finbot';
+    mockClient.linkTokenCreate.mockResolvedValue(linkTokenOk);
+
+    await createLinkToken('user-1', { platform: 'android' });
+
+    const request = mockClient.linkTokenCreate.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(request).toHaveProperty('android_package_name', 'com.finbot.finbot');
+    expect(request).not.toHaveProperty('redirect_uri');
+    expect(request).not.toHaveProperty('hosted_link');
+  });
+
+  test('ios sends the redirect URI and no hosted_link', async () => {
+    process.env.PLAID_REDIRECT_URI = 'https://api.example.com/plaid/oauth';
+    mockClient.linkTokenCreate.mockResolvedValue(linkTokenOk);
+
+    await createLinkToken('user-1', { platform: 'ios' });
+
+    const request = mockClient.linkTokenCreate.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(request).toHaveProperty('redirect_uri', 'https://api.example.com/plaid/oauth');
+    expect(request).not.toHaveProperty('android_package_name');
+    expect(request).not.toHaveProperty('hosted_link');
+  });
+
+  test('android without a configured package name fails before calling Plaid', async () => {
+    await expect(createLinkToken('user-1', { platform: 'android' })).rejects.toMatchObject({
+      statusCode: 503,
+      message: expect.stringContaining('PLAID_ANDROID_PACKAGE_NAME'),
+    });
+    expect(mockClient.linkTokenCreate).not.toHaveBeenCalled();
   });
 });

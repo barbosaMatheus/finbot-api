@@ -131,20 +131,36 @@ function toPlaidError(err: unknown, fallback: string): PlaidError {
   return new PlaidError(fallback, 502);
 }
 
+/** Which Link SDK will open the token. */
+export type LinkPlatform = 'web' | 'ios' | 'android';
+
 /**
  * Step 1 of the standard Plaid flow: create a short-lived link_token scoped to
- * this user. `hosted_link` is always requested so the web client (which cannot
- * load Plaid's native module) has a URL it can open in a browser.
+ * this user. A link_token is platform-specific on Plaid's side: Android must
+ * carry `android_package_name` and no `redirect_uri`; every other platform is
+ * the reverse. The client therefore says which platform will open Link. Web —
+ * the default, and what a client that sends no platform gets — also requests
+ * `hosted_link`, because a browser cannot load Plaid's native module.
  */
 export async function createLinkToken(
   userId: string,
-  options: { mode?: 'add' | 'update'; itemRowId?: string } = {},
+  options: { mode?: 'add' | 'update'; itemRowId?: string; platform?: LinkPlatform } = {},
 ): Promise<LinkTokenResult> {
   const client = getPlaidClient();
-  const redirectUri = getPlaidRedirectUri();
-  const androidPackageName = getPlaidAndroidPackageName();
+  const platform = options.platform ?? 'web';
+  const redirectUri = platform === 'android' ? undefined : getPlaidRedirectUri();
+  const androidPackageName = platform === 'android' ? getPlaidAndroidPackageName() : undefined;
   const completionRedirectUri = getHostedLinkRedirectUri();
   const webhookUrl = getPlaidWebhookUrl();
+
+  if (platform === 'android' && !androidPackageName) {
+    // Plaid rejects an Android session whose token has no package name, and
+    // the SDK's own message for that is opaque. Fail here, naming the fix.
+    throw new PlaidError(
+      'Android Link needs PLAID_ANDROID_PACKAGE_NAME set on the server',
+      503,
+    );
+  }
 
   // Update mode: re-authenticate or change account selection on an
   // existing Item. Requires the stored access token and takes no products.
@@ -190,9 +206,14 @@ export async function createLinkToken(
       ...(webhookUrl ? { webhook: webhookUrl } : {}),
       ...(redirectUri ? { redirect_uri: redirectUri } : {}),
       ...(androidPackageName ? { android_package_name: androidPackageName } : {}),
-      hosted_link: completionRedirectUri
-        ? { completion_redirect_uri: completionRedirectUri }
-        : {},
+      // Native SDKs never use the hosted URL; only the web client needs one.
+      ...(platform === 'web'
+        ? {
+            hosted_link: completionRedirectUri
+              ? { completion_redirect_uri: completionRedirectUri }
+              : {},
+          }
+        : {}),
     });
 
     return {

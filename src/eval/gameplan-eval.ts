@@ -144,14 +144,27 @@ async function main(): Promise<void> {
     );
   }
 
+  // The rate is measured over replies in the shape asked for: those are
+  // the sentences the containment check judges. A malformed reply (a
+  // loop cut off at the token cap, prose instead of JSON) is a separate
+  // failure with its own count; the numbers in its text are shown but do
+  // not count as fabricated, because no sentence of it was ever a
+  // candidate to be shown.
   const modelCalls = rows.filter((entry) => entry.rawChars !== null);
-  const fabricated = modelCalls.filter((entry) => entry.invented.length > 0);
+  const wellFormed = modelCalls.filter((entry) => entry.fallbackReason === null || entry.fallbackReason === 'number_invented');
+  const fabricated = wellFormed.filter((entry) => entry.fallbackReason === 'number_invented');
+  const malformed = rows.filter((entry) => entry.fallbackReason === 'malformed');
+  const clientErrors = rows.filter((entry) => entry.fallbackReason === 'client_error');
   const fromModel = rows.filter((entry) => entry.source === 'model').length;
-  const rate = modelCalls.length === 0 ? 0 : fabricated.length / modelCalls.length;
+  const rate = wellFormed.length === 0 ? 0 : fabricated.length / wellFormed.length;
 
   console.log('');
   console.log(`model calls: ${modelCalls.length} · narrated by the model: ${fromModel} · by the template: ${rows.length - fromModel}`);
-  console.log(`fabricated-number rate: ${fabricated.length}/${modelCalls.length} = ${(rate * 100).toFixed(1)}%`);
+  console.log(`well-formed replies: ${wellFormed.length} · malformed: ${malformed.length} · client errors: ${clientErrors.length}`);
+  console.log(`fabricated-number rate (well-formed replies with an invented number): ${fabricated.length}/${wellFormed.length} = ${(rate * 100).toFixed(1)}%`);
+  if (malformed.some((entry) => entry.invented.length > 0)) {
+    console.log('(numbers listed on malformed rows come from text that was never a candidate to be shown; they do not count toward the rate)');
+  }
   if (modelCalls.length === 0) {
     console.log('(no model host configured: set LLM_PROVIDER=ollama or anthropic to measure the real figure)');
   }

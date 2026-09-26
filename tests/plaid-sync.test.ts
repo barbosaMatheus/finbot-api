@@ -445,9 +445,12 @@ describe('maybeStartUserAnalysis', () => {
     declared: boolean;
     items: Array<{ sync_status: string | null }>;
     runStatus?: string;
+    /** An active Item was linked after the run's last transition. */
+    linkedAfterRun?: boolean;
   }) {
     const transitions: Array<{ to: string; errorCode?: string | null }> = [];
     const enqueued: unknown[] = [];
+    const recomputes: string[] = [];
 
     const db: Queryable = {
       async query<R>(text: string): Promise<{ rows: R[]; rowCount: number | null }> {
@@ -517,10 +520,15 @@ describe('maybeStartUserAnalysis', () => {
       transitionRun: async (_id, to, opts) => {
         transitions.push({ to, errorCode: opts?.errorCode });
       },
+      hasItemLinkedAfterRun: async () => options.linkedAfterRun ?? false,
+      requestRecompute: async (userId) => {
+        recomputes.push(userId);
+        return { status: 'queued' as const };
+      },
       now: () => new Date('2026-08-24T12:00:00Z'),
     };
 
-    return { deps, transitions, enqueued };
+    return { deps, transitions, enqueued, recomputes };
   }
 
   test('starts analysis when declared complete and all items terminal with one usable', async () => {
@@ -554,6 +562,45 @@ describe('maybeStartUserAnalysis', () => {
 
     expect(await maybeStartUserAnalysis('user-1', deps)).toBe('failed');
     expect(transitions).toEqual([{ to: 'failed', errorCode: 'NO_USABLE_ITEM' }]);
+  });
+
+  test('a review on screen is recomputed once an institution linked after it has synced', async () => {
+    const { deps, transitions, enqueued, recomputes } = orchestrationDeps({
+      declared: true,
+      items: [{ sync_status: 'complete' }, { sync_status: 'complete' }],
+      runStatus: 'review_ready',
+      linkedAfterRun: true,
+    });
+
+    expect(await maybeStartUserAnalysis('user-1', deps)).toBe('skipped');
+    expect(recomputes).toEqual(['user-1']);
+    // The recompute path owns the run's transitions; the gate starts nothing.
+    expect(transitions).toEqual([]);
+    expect(enqueued).toEqual([]);
+  });
+
+  test('a review on screen waits until the newly linked institution has synced', async () => {
+    const { deps, recomputes } = orchestrationDeps({
+      declared: true,
+      items: [{ sync_status: 'complete' }, { sync_status: 'syncing' }],
+      runStatus: 'review_ready',
+      linkedAfterRun: true,
+    });
+
+    expect(await maybeStartUserAnalysis('user-1', deps)).toBe('skipped');
+    expect(recomputes).toEqual([]);
+  });
+
+  test('a review on screen is left alone when nothing was linked after it', async () => {
+    const { deps, recomputes } = orchestrationDeps({
+      declared: true,
+      items: [{ sync_status: 'complete' }],
+      runStatus: 'review_ready',
+      linkedAfterRun: false,
+    });
+
+    expect(await maybeStartUserAnalysis('user-1', deps)).toBe('skipped');
+    expect(recomputes).toEqual([]);
   });
 
   test('does nothing before the user declares linking complete', async () => {

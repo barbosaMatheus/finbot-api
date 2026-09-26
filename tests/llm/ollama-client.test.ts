@@ -43,6 +43,33 @@ describe('OllamaClient', () => {
     expect(seen!.body.format).toMatchObject({ type: 'object', properties: { reply: { type: 'string' } } });
   });
 
+  test('free text: the same chat endpoint with no format', async () => {
+    let body: Record<string, unknown> | null = null;
+    const client = new OllamaClient({
+      baseUrl: 'http://ollama:11434',
+      model: 'llama3.1',
+      timeoutMs: 5000,
+      fetchImpl: fakeFetch((_url, init) => {
+        body = JSON.parse(String(init.body));
+        return new Response(JSON.stringify({ model: 'llama3.1', message: { content: 'Plain words.' } }), { status: 200 });
+      }),
+    });
+
+    const response = await client.completeText({ system: 'be plain', user: 'hello', maxTokens: 512 });
+
+    expect(response).toEqual({ text: 'Plain words.', model: 'llama3.1' });
+    expect(body!).toMatchObject({
+      model: 'llama3.1',
+      stream: false,
+      options: { temperature: 0, num_predict: 512, repeat_penalty: 1.1 },
+      messages: [
+        { role: 'system', content: 'be plain' },
+        { role: 'user', content: 'hello' },
+      ],
+    });
+    expect(body!).not.toHaveProperty('format');
+  });
+
   test('a non-2xx response, an error payload and a timeout become typed client errors', async () => {
     const failing = new OllamaClient({
       baseUrl: 'http://ollama:11434',

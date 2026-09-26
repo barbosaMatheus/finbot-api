@@ -20,6 +20,13 @@ import type {
 } from '../gameplan/types.js';
 import type { DiffExplanation, GradeExplanation, PlanExplanation } from './types.js';
 
+/**
+ * What chat says when the model's reply stated a figure it was not given.
+ * The reply is withheld rather than shown with an untraceable number in it.
+ */
+export const CHAT_NUMBER_WITHHELD_REPLY =
+  "I started to answer with a figure I can't trace back to your data, so I held that answer back. Try asking it another way, or check the numbers on your plan.";
+
 export function money(value: number): string {
   const rounded = Math.round(Math.abs(value));
   return `${value < 0 ? '−' : ''}$${rounded.toLocaleString('en-US')}`;

@@ -1009,6 +1009,7 @@ export const OPERATIONS: Operation[] = [
       '403': error('Forbidden'),
       '404': error('Prompt template not found'),
       '502': error('Model request failed'),
+      '503': error('No model configured: set LLM_PROVIDER to ollama or anthropic'),
     },
   },
 ];

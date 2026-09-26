@@ -1,12 +1,20 @@
+/**
+ * Chat: retrieve the user's related context, render the prompt template,
+ * and ask the model through the LLM seam (`src/llm/`). LLM_PROVIDER picks
+ * the host exactly as it does for the gameplan narration, and the reply
+ * passes the same number check: a reply that states a figure the model was
+ * not given is withheld and a fixed sentence says so.
+ */
+
 import { pgVectorSize, pool } from '../db.js';
+import { CHAT_RULES } from '../llm/prompts.js';
+import { llmProviderFromEnv } from '../llm/provider.js';
+import { CHAT_NUMBER_WITHHELD_REPLY } from '../llm/templates.js';
+import type { ChatAnswer, LlmProvider } from '../llm/types.js';
 import { buildEmbeddingVector } from '../rag/build-embeddings.js';
-import { logger } from '../lib/logger.js';
 import { ChatPromptError, type ChatPromptInput } from '../types/chat-prompt.js';
 
 const DEFAULT_PROMPT_TEMPLATE_NAME = 'Test Template';
-const DEFAULT_OLLAMA_URL = 'http://ollama:11434';
-const DEFAULT_OLLAMA_MODEL = 'llama3.1';
-const DEFAULT_OLLAMA_TIMEOUT_MS = 120_000;
 
 function toPgVectorString(values: number[]): string {
     return `[${values.map((value) => (Number.isFinite(value) ? value : 0)).join(',')}]`;
@@ -83,60 +91,30 @@ function renderPrompt(
     return enrichedPrompt;
 }
 
-function parseTimeoutMs(): number {
-    const value = Number.parseInt(process.env.OLLAMA_TIMEOUT_MS ?? '', 10);
-    return Number.isInteger(value) && value > 0 ? value : DEFAULT_OLLAMA_TIMEOUT_MS;
-}
+/** The reply the user sees, or the error the route maps to a status. */
+function replyFor(answer: ChatAnswer): string {
+    if (answer.ok) return answer.text;
 
-async function queryModel(prompt: string): Promise<string> {
-    const baseUrl = (process.env.OLLAMA_URL ?? DEFAULT_OLLAMA_URL).replace(/\/+$/, '');
-    const model = process.env.OLLAMA_MODEL ?? DEFAULT_OLLAMA_MODEL;
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), parseTimeoutMs());
-
-    try {
-        const response = await fetch(`${baseUrl}/api/generate`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            signal: controller.signal,
-            body: JSON.stringify({ model, prompt, stream: false }),
-        });
-
-        if (!response.ok) {
-            throw new ChatPromptError(`Model request failed with status ${response.status}`, 502);
-        }
-
-        const data = (await response.json()) as { response?: string; error?: string };
-
-        if (data.error) {
-            throw new ChatPromptError(data.error, 502);
-        }
-
-        const modelResponse = data.response?.trim();
-
-        if (!modelResponse) {
+    switch (answer.reason) {
+        case 'number_invented':
+            return CHAT_NUMBER_WITHHELD_REPLY;
+        case 'no_provider':
+            throw new ChatPromptError('No model configured: set LLM_PROVIDER to ollama or anthropic', 503);
+        case 'malformed':
             throw new ChatPromptError('Model returned an empty response', 502);
-        }
-
-        return modelResponse;
-    } catch (error) {
-        if (error instanceof ChatPromptError) {
-            throw error;
-        }
-
-        const message =
-            error instanceof Error && error.name === 'AbortError'
-                ? 'Model request timed out'
-                : 'Model request failed';
-
-        logger.warn('[chat-prompt] ollama request failed', { err: error });
-        throw new ChatPromptError(message, 502);
-    } finally {
-        clearTimeout(timer);
+        case 'client_error':
+        default:
+            throw new ChatPromptError(
+                answer.clientErrorCode === 'timeout' ? 'Model request timed out' : 'Model request failed',
+                502,
+            );
     }
 }
 
-export async function generateChatPromptResponse(input: ChatPromptInput): Promise<string> {
+export async function generateChatPromptResponse(
+    input: ChatPromptInput,
+    provider: LlmProvider = llmProviderFromEnv(),
+): Promise<string> {
     const templateName = input.promptTemplateName?.trim() || DEFAULT_PROMPT_TEMPLATE_NAME;
 
     const [contexts, { template, baseIntelligence }] = await Promise.all([
@@ -152,5 +130,5 @@ export async function generateChatPromptResponse(input: ChatPromptInput): Promis
         input.userPromptText,
     );
 
-    return queryModel(prompt);
+    return replyFor(await provider.answerChat({ system: CHAT_RULES, prompt }));
 }

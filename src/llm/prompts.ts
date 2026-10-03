@@ -26,6 +26,17 @@ Rules:
 - Dollar amounts as whole dollars with a $ sign, e.g. $1,472.
 - Return only the JSON asked for.`;
 
+/**
+ * The system message for chat. The user message is the rendered prompt
+ * template (base intelligence, retrieved context, the question); the reply
+ * may only state numbers that appear in one of the two.
+ */
+export const CHAT_RULES = `You are FinBot, a budgeting assistant. You answer the user's question using only the material you are given.
+Rules:
+- Use only numbers that appear in the material you are given. Do not add, round, sum, average or estimate any figure. If an answer needs a number that is not there, say you do not have it instead of guessing.
+- Plain language, short sentences, no budgeting jargon, no exclamation marks, no judgment.
+- Keep it to a short paragraph of plain text: no tables, no headings.`;
+
 export const planOutputSchema = z.object({
   items: z.array(z.object({ id: z.string(), why: z.string() })),
 });

@@ -38,6 +38,8 @@ import {
 import { templateDiff, templateGrade, templatePlan } from './templates.js';
 import {
   LlmClientError,
+  type ChatAnswer,
+  type ChatAnswerInput,
   type DiffExplanation,
   type ExplainInput,
   type ExplainKind,
@@ -63,6 +65,8 @@ function narrationBudget(sentences: number): number {
   return 128 + 72 * sentences;
 }
 const ADJUSTMENT_MAX_TOKENS = 1024;
+/** A chat reply is a short paragraph; this leaves room for it and cuts a looping model off early. */
+const CHAT_MAX_TOKENS = 512;
 
 // The engine owns the record's schema; the adapters constrain the model to
 // exactly what validateAdjustment accepts.
@@ -299,6 +303,49 @@ async function parseAdjustmentWith(
   };
 }
 
+/**
+ * Chat: free text through the client, then the same number check as the
+ * narrations, against everything the model was shown. There is no template
+ * answer to a question, so a failure is reported and the caller decides
+ * what the user sees.
+ */
+async function answerChatWith(client: LlmClient | null, input: ChatAnswerInput): Promise<ChatAnswer> {
+  if (!client) return { ok: false, reason: 'no_provider', model: null, clientErrorCode: null, raw: null };
+
+  let text: string;
+  let model: string;
+  try {
+    const response = await client.completeText({ system: input.system, user: input.prompt, maxTokens: CHAT_MAX_TOKENS });
+    text = response.text.trim();
+    model = response.model;
+  } catch (error) {
+    const code = error instanceof LlmClientError ? error.code : null;
+    logger.warn('llm chat call failed', {
+      client: client.name,
+      code: code ?? 'unknown',
+      message: error instanceof Error ? error.message : String(error),
+    });
+    return { ok: false, reason: 'client_error', model: null, clientErrorCode: code, raw: null };
+  }
+
+  if (text === '') {
+    logger.warn('llm chat reply was empty', { client: client.name, model });
+    return { ok: false, reason: 'malformed', model, clientErrorCode: null, raw: { text, invented: [] } };
+  }
+
+  const check = checkContainment(text, allowedNumbers([input.system, input.prompt]));
+  if (!check.ok) {
+    logger.warn('llm chat reply stated a number it was not given; withheld', {
+      client: client.name,
+      model,
+      invented: check.invented,
+    });
+    return { ok: false, reason: 'number_invented', model, clientErrorCode: null, raw: { text, invented: check.invented } };
+  }
+
+  return { ok: true, text, model };
+}
+
 /** Build the port over a client; `null` gives the template-only provider. */
 export function createLlmProvider(client: LlmClient | null): LlmProvider {
   return {
@@ -308,6 +355,9 @@ export function createLlmProvider(client: LlmClient | null): LlmProvider {
     },
     parseAdjustment(text: string, vocabulary: AdjustmentVocabulary): Promise<ParsedAdjustment> {
       return parseAdjustmentWith(client, text, vocabulary);
+    },
+    answerChat(input: ChatAnswerInput): Promise<ChatAnswer> {
+      return answerChatWith(client, input);
     },
   };
 }

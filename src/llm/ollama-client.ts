@@ -7,7 +7,14 @@
 
 import { z } from 'zod';
 
-import { LlmClientError, type LlmClient, type LlmJsonRequest, type LlmJsonResponse } from './types.js';
+import {
+  LlmClientError,
+  type LlmClient,
+  type LlmJsonRequest,
+  type LlmJsonResponse,
+  type LlmTextRequest,
+  type LlmTextResponse,
+} from './types.js';
 
 export type OllamaClientOptions = {
   baseUrl: string;
@@ -28,16 +35,26 @@ export class OllamaClient implements LlmClient {
   constructor(private readonly options: OllamaClientOptions) {}
 
   async completeJson<T>(request: LlmJsonRequest<T>): Promise<LlmJsonResponse> {
+    const format = z.toJSONSchema(request.schema, { target: 'draft-2020-12', unrepresentable: 'any' });
+    return this.chat(request.system, request.user, request.maxTokens, format);
+  }
+
+  async completeText(request: LlmTextRequest): Promise<LlmTextResponse> {
+    return this.chat(request.system, request.user, request.maxTokens, null);
+  }
+
+  /** One non-streaming /api/chat call; `format` constrains the reply to a JSON schema when given. */
+  private async chat(system: string, user: string, maxTokens: number, format: unknown): Promise<LlmJsonResponse> {
     const doFetch = this.options.fetchImpl ?? fetch;
     const url = `${this.options.baseUrl.replace(/\/$/, '')}/api/chat`;
     const body = {
       model: this.options.model,
       stream: false,
-      format: z.toJSONSchema(request.schema, { target: 'draft-2020-12', unrepresentable: 'any' }),
-      options: { temperature: 0, num_predict: request.maxTokens, repeat_penalty: 1.1 },
+      ...(format === null ? {} : { format }),
+      options: { temperature: 0, num_predict: maxTokens, repeat_penalty: 1.1 },
       messages: [
-        { role: 'system', content: request.system },
-        { role: 'user', content: request.user },
+        { role: 'system', content: system },
+        { role: 'user', content: user },
       ],
     };
 

@@ -12,6 +12,19 @@ describe('numbersInText', () => {
     expect(numbersInText('$15.49 each time')).toEqual([15.49]);
   });
 
+  test('reads a number that ends a sentence', () => {
+    expect(numbersInText('It is 10.')).toEqual([10]);
+    expect(numbersInText('Total is $1,340.')).toEqual([1340]);
+    expect(numbersInText('Rent is $1,200. Car is $140.')).toEqual([1200, 140]);
+    expect(numbersInText('That comes to $12.50.')).toEqual([12.5]);
+    expect(numbersInText('It lands on the 29th.')).toEqual([29]);
+    expect(numbersInText('Set aside 25%.')).toEqual([25]);
+  });
+
+  test('a version string is still not read as a number', () => {
+    expect(numbersInText('release 3.1.2 is out')).toEqual([]);
+  });
+
   test('reads number words', () => {
     expect(numbersInText('about four hundred for the repair')).toEqual([400]);
     expect(numbersInText('twelve hundred dollars')).toEqual([1200]);
@@ -66,5 +79,10 @@ describe('checkContainment', () => {
   test('a sum the model computed is an invented number', () => {
     // 112 + 448 = 560: derivable, but not given, so it fails.
     expect(checkContainment('That leaves $560 in total.', allowed).ok).toBe(false);
+  });
+
+  test('a computed number at the end of a sentence is caught too', () => {
+    expect(checkContainment('Together that is $560.', allowed)).toEqual({ ok: false, invented: [560] });
+    expect(checkContainment('Move $112.', allowed).ok).toBe(true);
   });
 });

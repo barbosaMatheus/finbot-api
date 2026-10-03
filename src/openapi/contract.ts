@@ -41,6 +41,7 @@ import {
   reflectionResultSchema,
   settingsResultSchema,
 } from './gameplan-schemas.js';
+import { chatPromptSchema } from '../routes/chat-prompt.js';
 
 // ---------------------------------------------------------------------------
 // Shared response schemas
@@ -397,6 +398,8 @@ export const vectorSearchResultSchema = z.object({
 });
 
 export const promptResultSchema = z.object({ prompt: z.string() });
+
+export const chatPromptResponseSchema = z.object({ response: z.string() });
 
 // ---------------------------------------------------------------------------
 // Examples (normative, from the design document)
@@ -989,6 +992,24 @@ export const OPERATIONS: Operation[] = [
       '400': error('Validation failed'),
       '401': error('Unauthorized'),
       '404': error('Prompt template not found'),
+    },
+  },
+  {
+    method: 'post',
+    path: '/chat-prompt',
+    operationId: 'chatPrompt',
+    summary:
+      'Retrieve related context for the prompt text, render the templated prompt, and return the hosted model response',
+    auth: 'user',
+    requestBody: chatPromptSchema,
+    responses: {
+      '200': { description: 'Model response', schema: chatPromptResponseSchema },
+      '400': error('Validation failed'),
+      '401': error('Unauthorized'),
+      '403': error('Forbidden'),
+      '404': error('Prompt template not found'),
+      '502': error('Model request failed'),
+      '503': error('No model configured: set LLM_PROVIDER to ollama or anthropic'),
     },
   },
 ];

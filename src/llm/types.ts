@@ -40,9 +40,20 @@ export type LlmJsonResponse = {
   model: string;
 };
 
+/** Free text with no schema: a chat reply. */
+export type LlmTextRequest = {
+  system: string;
+  user: string;
+  maxTokens: number;
+};
+
+export type LlmTextResponse = LlmJsonResponse;
+
 export type LlmClient = {
   readonly name: string;
   completeJson<T>(request: LlmJsonRequest<T>): Promise<LlmJsonResponse>;
+  /** Free text for chat. The provider still runs the number check on it. */
+  completeText(request: LlmTextRequest): Promise<LlmTextResponse>;
 };
 
 /** Thrown by adapters for transport, auth, timeout and refusal failures. */
@@ -123,8 +134,30 @@ export type ParsedAdjustment = {
   fallbackReason: NarrationFallbackReason | null;
 };
 
+/**
+ * One chat turn: the rules and the prompt the model sees. Every number in
+ * the reply must appear in one of the two, or the reply is withheld.
+ */
+export type ChatAnswerInput = {
+  system: string;
+  prompt: string;
+};
+
+export type ChatAnswer =
+  | { ok: true; text: string; model: string }
+  | {
+      ok: false;
+      reason: NarrationFallbackReason;
+      model: string | null;
+      /** Set on client_error, so the caller can tell a timeout from a transport failure. */
+      clientErrorCode: LlmClientError['code'] | null;
+      raw: RawNarration | null;
+    };
+
 export type LlmProvider = {
   readonly name: string;
   explain<I extends ExplainInput>(input: I): Promise<Narration<ExplainOutputFor<I['kind']>>>;
   parseAdjustment(text: string, vocabulary: AdjustmentVocabulary): Promise<ParsedAdjustment>;
+  /** A chat reply, checked for invented numbers. Never throws. */
+  answerChat(input: ChatAnswerInput): Promise<ChatAnswer>;
 };

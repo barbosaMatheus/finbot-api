@@ -8,6 +8,7 @@ import { allowedNumbers, checkContainment } from '../../src/llm/containment.js';
 import { FakeLlmClient } from '../../src/llm/fake-client.js';
 import { diffPayload, gradePayload, planPayload } from '../../src/llm/prompts.js';
 import { createLlmProvider, llmProviderFromEnv } from '../../src/llm/provider.js';
+import { CHAT_RULES } from '../../src/llm/prompts.js';
 import { templatePlan } from '../../src/llm/templates.js';
 import { LlmClientError } from '../../src/llm/types.js';
 import { samInput } from '../gameplan/fixtures.js';
@@ -283,9 +284,46 @@ describe('parseAdjustment (§5, §5a, decision 13)', () => {
 });
 
 describe('llmProviderFromEnv', () => {
+  test('every provider answers chat, through the same seam', () => {
+    for (const LLM_PROVIDER of ['template', 'ollama', 'anthropic']) {
+      expect(typeof llmProviderFromEnv({ LLM_PROVIDER, ANTHROPIC_API_KEY: 'sk-ant-test' }).answerChat).toBe('function');
+    }
+  });
+
   test('template-only unless LLM_PROVIDER says otherwise', () => {
     expect(llmProviderFromEnv({}).name).toBe('template');
     expect(llmProviderFromEnv({ LLM_PROVIDER: 'nonsense' }).name).toBe('template');
     expect(llmProviderFromEnv({ LLM_PROVIDER: 'ollama' }).name).toBe('ollama');
+  });
+});
+
+describe('answerChat', () => {
+  const prompt = 'Context: rent is $1,200 a month and the phone bill is $45.\nQuestion: what are my bills?';
+
+  test('free text through the client, the chat rules as the system message, a bounded token budget', async () => {
+    const client = new FakeLlmClient(['Your rent is $1,200 and your phone bill is $45.']);
+    const answer = await createLlmProvider(client).answerChat({ system: CHAT_RULES, prompt });
+
+    expect(answer).toEqual({ ok: true, text: 'Your rent is $1,200 and your phone bill is $45.', model: 'fake-1' });
+    expect(client.requests).toHaveLength(0);
+    expect(client.textRequests).toEqual([{ system: CHAT_RULES, user: prompt, maxTokens: 512 }]);
+  });
+
+  test('a reply with a number it was not given is withheld, with the number recorded', async () => {
+    const answer = await createLlmProvider(new FakeLlmClient(['Together that is $1,245 a month.'])).answerChat({ system: CHAT_RULES, prompt });
+
+    expect(answer).toMatchObject({ ok: false, reason: 'number_invented', model: 'fake-1' });
+    expect(answer.ok ? [] : answer.raw?.invented).toEqual([1245]);
+  });
+
+  test('no model, an empty reply and a client failure are each reported, never thrown', async () => {
+    expect(await createLlmProvider(null).answerChat({ system: CHAT_RULES, prompt })).toMatchObject({ ok: false, reason: 'no_provider' });
+    expect(await createLlmProvider(new FakeLlmClient(['  '])).answerChat({ system: CHAT_RULES, prompt })).toMatchObject({
+      ok: false,
+      reason: 'malformed',
+    });
+    expect(
+      await createLlmProvider(new FakeLlmClient([new LlmClientError('slow', 'timeout')])).answerChat({ system: CHAT_RULES, prompt }),
+    ).toMatchObject({ ok: false, reason: 'client_error', clientErrorCode: 'timeout' });
   });
 });

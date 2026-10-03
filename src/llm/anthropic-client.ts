@@ -9,7 +9,14 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod';
 
-import { LlmClientError, type LlmClient, type LlmJsonRequest, type LlmJsonResponse } from './types.js';
+import {
+  LlmClientError,
+  type LlmClient,
+  type LlmJsonRequest,
+  type LlmJsonResponse,
+  type LlmTextRequest,
+  type LlmTextResponse,
+} from './types.js';
 
 export type AnthropicClientOptions = {
   model: string;
@@ -43,35 +50,59 @@ export class AnthropicClient implements LlmClient {
         },
       });
 
-      if (response.stop_reason === 'refusal') {
-        throw new LlmClientError('the model declined the request', 'refusal');
-      }
-
-      const text = response.content
-        .filter((block): block is Extract<typeof block, { type: 'text' }> => block.type === 'text')
-        .map((block) => block.text)
-        .join('');
-
-      if (text.trim() === '') {
-        throw new LlmClientError('the response carried no text', 'bad_response');
-      }
-
-      return { text, model: response.model };
+      return textOf(response);
     } catch (error) {
-      if (error instanceof LlmClientError) throw error;
-      if (error instanceof Anthropic.AuthenticationError) {
-        throw new LlmClientError('anthropic authentication failed', 'auth');
-      }
-      if (error instanceof Anthropic.APIConnectionTimeoutError) {
-        throw new LlmClientError('anthropic request timed out', 'timeout');
-      }
-      if (error instanceof Anthropic.APIError) {
-        throw new LlmClientError(`anthropic API error ${error.status ?? ''}: ${error.message}`, 'transport');
-      }
-      throw new LlmClientError(
-        `anthropic request failed: ${error instanceof Error ? error.message : String(error)}`,
-        'transport',
-      );
+      throw toClientError(error);
     }
   }
+
+  async completeText(request: LlmTextRequest): Promise<LlmTextResponse> {
+    try {
+      const response = await this.client.messages.create({
+        model: this.options.model,
+        max_tokens: request.maxTokens,
+        system: request.system,
+        messages: [{ role: 'user', content: request.user }],
+        output_config: { effort: this.options.effort },
+      });
+      return textOf(response);
+    } catch (error) {
+      throw toClientError(error);
+    }
+  }
+}
+
+/** The reply's text blocks joined; a refusal or an empty reply is a client error. */
+function textOf(response: Anthropic.Message): LlmJsonResponse {
+  if (response.stop_reason === 'refusal') {
+    throw new LlmClientError('the model declined the request', 'refusal');
+  }
+
+  const text = response.content
+    .filter((block): block is Extract<typeof block, { type: 'text' }> => block.type === 'text')
+    .map((block) => block.text)
+    .join('');
+
+  if (text.trim() === '') {
+    throw new LlmClientError('the response carried no text', 'bad_response');
+  }
+
+  return { text, model: response.model };
+}
+
+function toClientError(error: unknown): LlmClientError {
+  if (error instanceof LlmClientError) return error;
+  if (error instanceof Anthropic.AuthenticationError) {
+    return new LlmClientError('anthropic authentication failed', 'auth');
+  }
+  if (error instanceof Anthropic.APIConnectionTimeoutError) {
+    return new LlmClientError('anthropic request timed out', 'timeout');
+  }
+  if (error instanceof Anthropic.APIError) {
+    return new LlmClientError(`anthropic API error ${error.status ?? ''}: ${error.message}`, 'transport');
+  }
+  return new LlmClientError(
+    `anthropic request failed: ${error instanceof Error ? error.message : String(error)}`,
+    'transport',
+  );
 }

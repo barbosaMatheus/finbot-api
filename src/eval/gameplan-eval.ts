@@ -165,8 +165,10 @@ async function main(): Promise<void> {
   if (malformed.some((entry) => entry.invented.length > 0)) {
     console.log('(numbers listed on malformed rows come from text that was never a candidate to be shown; they do not count toward the rate)');
   }
-  if (modelCalls.length === 0) {
+  if (provider.name === 'template') {
     console.log('(no model host configured: set LLM_PROVIDER=ollama or anthropic to measure the real figure)');
+  } else if (modelCalls.length === 0) {
+    console.log(`(the ${provider.name} host never answered: check that it is running and that its URL and model name are right; nothing was measured)`);
   }
 
   if (args.has('--traffic')) {

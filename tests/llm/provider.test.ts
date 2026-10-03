@@ -11,6 +11,8 @@ import { createLlmProvider, llmProviderFromEnv } from '../../src/llm/provider.js
 import { CHAT_RULES } from '../../src/llm/prompts.js';
 import { templatePlan } from '../../src/llm/templates.js';
 import { LlmClientError } from '../../src/llm/types.js';
+import { SCENARIOS } from '../../src/eval/scenarios.js';
+import { changeAmountOf } from '../../src/gameplan/target-amount.js';
 import { samInput } from '../gameplan/fixtures.js';
 
 jest.spyOn(console, 'warn').mockImplementation(() => {});
@@ -325,5 +327,31 @@ describe('answerChat', () => {
     expect(
       await createLlmProvider(new FakeLlmClient([new LlmClientError('slow', 'timeout')])).answerChat({ system: CHAT_RULES, prompt }),
     ).toMatchObject({ ok: false, reason: 'client_error', clientErrorCode: 'timeout' });
+  });
+});
+
+describe('diffPayload change amounts', () => {
+  test('a moved entry carries how far it moved, so the model can quote it instead of subtracting', () => {
+    const scenario = SCENARIOS.find((entry) => entry.id === 'save-for-specific')!;
+    const payload = diffPayload(applyAdjustment(scenario.input, scenario.adjustment), scenario.adjustment) as {
+      changes: { change: string; changeAmount: number | null }[];
+    };
+
+    expect(payload.changes.map((entry) => [entry.change, entry.changeAmount])).toEqual([
+      ['shrunk', 152],
+      ['unchanged', null],
+      ['unchanged', null],
+    ]);
+    // The reply llama3.1 wrote on 2026-09-26, withheld then, passes now.
+    expect(checkContainment('The savings transfer for the trip goal shrunk by $152.', allowedNumbers(payload)).ok).toBe(true);
+  });
+
+  test('no change amount when a side has no figure or nothing moved', () => {
+    const cap = { type: 'spend_cap', bucket: 'Eating Out', cap: 136 } as never;
+    const awareness = { type: 'awareness', kind: 'biggest_purchases' } as never;
+    expect(changeAmountOf(cap, cap)).toBeNull();
+    expect(changeAmountOf(cap, null)).toBeNull();
+    expect(changeAmountOf(awareness, cap)).toBeNull();
+    expect(changeAmountOf(cap, { type: 'spend_cap', bucket: 'Eating Out', cap: 170 } as never)).toBe(34);
   });
 });

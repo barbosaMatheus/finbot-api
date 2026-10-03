@@ -16,6 +16,7 @@ import type {
   PeriodGrade,
   Shortlist,
 } from '../gameplan/types.js';
+import { changeAmountOf } from '../gameplan/target-amount.js';
 
 export const VOICE_RULES = `You write for a budgeting app that never invents a number.
 Rules:
@@ -121,7 +122,9 @@ export function diffPayload(result: AdjustmentResult, adjustment: Adjustment): R
     confirmedAmount: adjustment.amount,
     outcome: result.outcome,
     // Unchanged entries stay in, so the reply can say what did not move.
-    changes: result.diff,
+    // changeAmount is how far an entry moved, worked out here so the model
+    // quotes it instead of subtracting before from after.
+    changes: result.diff.map((entry) => ({ ...entry, changeAmount: changeAmountOf(entry.before, entry.after) })),
     freeCashAfter: result.after.freeCash.freeCash,
   };
 }
@@ -129,7 +132,7 @@ export function diffPayload(result: AdjustmentResult, adjustment: Adjustment): R
 export function diffPrompt(result: AdjustmentResult, adjustment: Adjustment): { system: string; user: string } {
   return {
     system: `${VOICE_RULES}
-Task: the user gave a heads-up and the plan was re-computed. In at most two sentences, say what changed and why, using the user's own words for the reason; entries whose change is "unchanged" did not move. If nothing moved, say so plainly and why. Return {"reply":"<text>"}.`,
+Task: the user gave a heads-up and the plan was re-computed. In at most two sentences, say what changed and why, using the user's own words for the reason; entries whose change is "unchanged" did not move. To say how much an entry moved, quote its changeAmount; never subtract one figure from another. If nothing moved, say so plainly and why. Return {"reply":"<text>"}.`,
     user: JSON.stringify(diffPayload(result, adjustment)),
   };
 }

@@ -4,26 +4,13 @@
  * numbers fails CI before anyone measures the words.
  */
 
-import type { Shortlist, TargetDefinition } from '../gameplan/types.js';
+import { amountOf } from '../gameplan/target-amount.js';
+import type { Shortlist } from '../gameplan/types.js';
 import type { Scenario, ScenarioExpectation } from './scenarios.js';
 
-export type RegressionFailure = { scenario: string; what: string; expected: unknown; actual: unknown };
+export { amountOf };
 
-/** The cap, count or amount a target carries; null for awareness. */
-export function amountOf(definition: TargetDefinition): number | null {
-  switch (definition.type) {
-    case 'spend_cap':
-      return definition.cap;
-    case 'frequency_cap':
-      return definition.maxCount;
-    case 'bill_readiness':
-    case 'savings_transfer':
-    case 'debt_payment':
-      return definition.amount;
-    case 'awareness':
-      return null;
-  }
-}
+export type RegressionFailure = { scenario: string; what: string; expected: unknown; actual: unknown };
 
 /** The plan as the expectation type sees it, for pinning and comparing. */
 export function observed(shortlist: Shortlist): ScenarioExpectation {
